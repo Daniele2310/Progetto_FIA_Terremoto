@@ -1,0 +1,188 @@
+================================================================================
+DOCUMENTO DI BORDO
+================================================================================
+
+Data: Luca - 20/03/2026
+
+=========================
+OBIETTIVO DEL PROGETTO
+
+Predire il valore della variabile ordinale "damage_grade" (grado di danno), 
+che rappresenta il livello di danno agli edifici colpiti dal terremoto.
+
+CLASSIFICAZIONE DEI DANNI:
+- Grado 1: Low damage (danno basso)
+- Grado 2: Medium amount of damage (danno medio)
+- Grado 3: Almost complete destruction (distruzione quasi totale)
+
+STRUTTURA DEL DATASET:
+- Il dataset principale è composto da informazioni sulla struttura degli edifici 
+  e sulla loro proprietà legale
+- Ogni riga rappresenta uno specifico edificio nella regione colpita dal 
+  terremoto di Gorkha
+- Il dataset contiene 39 colonne totali
+
+COLONNE DEL DATASET:
+1. building_id: Identificatore univoco e casuale per ogni edificio
+2. 38 feature descritte nel dettaglio
+
+- Le variabili categoriche sono state offuscate con caratteri ASCII minuscoli casuali
+- L'apparizione dello stesso carattere in colonne diverse NON implica lo stesso 
+  valore originale
+- Sono spesso presenti valori mancanti
+
+================================================================================
+FEATURE DEL DATASET (38 FEATURE)
+
+FEATURE GEOGRAFICHE (3):
+1. geo_level_1_id (int): Regione geografica di livello 1 (più grande)
+   - Valori possibili: 0-30
+   
+2. geo_level_2_id (int): Regione geografica di livello 2
+   - Valori possibili: 0-1427
+   
+3. geo_level_3_id (int): Regione geografica di livello 3 (più specifica)
+   - Valori possibili: 0-12567
+
+FEATURE STRUTTURALI DELL'EDIFICIO (5):
+4. count_floors_pre_eq (int): Numero di piani dell'edificio prima del terremoto
+
+5. age (int): Età dell'edificio in anni
+
+6. area_percentage (int): Area normalizzata della base dell'edificio
+
+7. height_percentage (int): Altezza normalizzata della base dell'edificio
+
+8. land_surface_condition (categorical): Condizione della superficie del terreno
+   - Valori possibili: n, o, t
+
+FEATURE DI COSTRUZIONE - FONDAMENTA E COPERTURA (3):
+9. foundation_type (categorical): Tipo di fondamenta utilizzate
+   - Valori possibili: h, i, r, u, w
+   
+10. roof_type (categorical): Tipo di tetto utilizzato
+    - Valori possibili: n, q, x
+    
+11. ground_floor_type (categorical): Tipo di pavimento al piano terra
+    - Valori possibili: f, m, v, x, z
+
+FEATURE DI COSTRUZIONE - PIANI E POSIZIONE (3):
+12. other_floor_type (categorical): Tipo di costruzione per piani superiori 
+    (escludendo il tetto)
+    - Valori possibili: j, q, s, x
+    
+13. position (categorical): Posizione dell'edificio
+    - Valori possibili: j, o, s, t
+    
+14. plan_configuration (categorical): Configurazione della pianta dell'edificio
+    - Valori possibili: a, c, d, f, m, n, o, q, s, u
+
+FEATURE - SUPERSTRUCTURE (MATERIALI) (9):
+15. has_superstructure_adobe_mud (binary): Sovrastruttura in Adobe/Fango
+16. has_superstructure_mud_mortar_stone (binary): Sovrastruttura in Pietra con 
+    mortaio di fango
+17. has_superstructure_stone_flag (binary): Sovrastruttura in Pietra
+18. has_superstructure_cement_mortar_stone (binary): Sovrastruttura in Pietra 
+    con mortaio di cemento
+19. has_superstructure_mud_mortar_brick (binary): Sovrastruttura in Mattone 
+    con mortaio di fango
+20. has_superstructure_cement_mortar_brick (binary): Sovrastruttura in Mattone 
+    con mortaio di cemento
+21. has_superstructure_timber (binary): Sovrastruttura in Legno
+22. has_superstructure_bamboo (binary): Sovrastruttura in Bambù
+23. has_superstructure_rc_engineered (binary): Sovrastruttura in Cemento Armato 
+    progettato (engineered)
+24. has_superstructure_rc_non_engineered (binary): Sovrastruttura in Cemento 
+    Armato non progettato (non-engineered)
+25. has_superstructure_other (binary): Sovrastruttura in altri materiali
+
+FEATURE DI PROPRIETÀ E UTILIZZO (8):
+26. legal_ownership_status (categorical): Status di proprietà legale del terreno
+    - Valori possibili: a, r, v, w
+    
+27. count_families (int): Numero di famiglie che vivono nell'edificio
+
+28. has_secondary_use (binary): Indica se l'edificio era utilizzato per scopi 
+    secondari
+
+29. has_secondary_use_agriculture (binary): Utilizzo secondario per agricoltura
+
+30. has_secondary_use_hotel (binary): Utilizzo secondario come hotel
+
+31. has_secondary_use_rental (binary): Utilizzo secondario per affitti
+
+32. has_secondary_use_institution (binary): Utilizzo secondario come istituzione
+
+33. has_secondary_use_school (binary): Utilizzo secondario come scuola
+
+34. has_secondary_use_industry (binary): Utilizzo secondario per industria
+
+35. has_secondary_use_health_post (binary): Utilizzo secondario come centro sanitario
+
+36. has_secondary_use_gov_office (binary): Utilizzo secondario come ufficio 
+    governativo
+
+37. has_secondary_use_use_police (binary): Utilizzo secondario come stazione 
+    di polizia
+
+38. has_secondary_use_other (binary): Utilizzo secondario per altri scopi
+
+================================================================================
+METRICA DI VALUTAZIONE
+
+TIPO DI PROBLEMA:
+- Classificazione Ordinale (Ordinal Regression/Classification)
+- L'ordine dei danni è importante (1 < 2 < 3)
+
+METRICA UTILIZZATA: Micro-averaged F1 Score
+
+FORMULA:
+F_micro = 2 · P_micro · R_micro / (P_micro + R_micro)
+
+Dove:
+- P_micro (Precisione micro-media) = Σ(k=1 to 3) TP_k / Σ(k=1 to 3) (TP_k + FP_k)
+- R_micro (Recall micro-media) = Σ(k=1 to 3) TP_k / Σ(k=1 to 3) (TP_k + FN_k)
+
+
+- TP (True Positive): Predizioni corrette
+- FP (False Positive): Predizioni sbagliate positive
+- FN (False Negative): Predizioni sbagliate negative
+- k rappresenta ogni classe (1, 2, 3)
+
+È possibile calcolare facilmente questa metrica usando:
+  from sklearn.metrics import f1_score
+  f1_score(y_true, y_pred, average='micro')
+
+
+================================================================================
+FORMATO DI SUBMISSION
+
+FILE DI USCITA:
+- Formato: CSV a due colonne
+- Colonne: building_id, damage_grade
+
+SPECIFICHE:
+- damage_grade deve essere un intero (1, 2, o 3)
+- Niente decimali (ad es. "1" è valido, "1.0" NON è valido)
+- Solo i valori 1, 2, 3 sono accettati
+
+ESEMPIO DI FORMATO:
+```
+building_id,damage_grade
+11456,1
+16528,1
+3253,1
+18614,1
+1544,1
+```
+================================================================================
+NOTE AGGIUNTIVE
+================================================================================
+
+- La challenge è classificata come "Intermediate practice"
+- Ordinal Regression è importante per questo problema: l'ordine dell'etichetta 
+  è significativo
+- Molte features sono categoriche e offuscate
+- Il dataset contiene valori mancanti che vanno gestiti
+- È possibile visualizzare il benchmark walkthrough per iniziare
+- Per domande tecnici è disponibile il forum della community
