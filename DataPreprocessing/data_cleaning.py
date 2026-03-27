@@ -16,7 +16,7 @@ COLONNE_CONTINUE = [
 class DataQualityHandler:
     """Classe per il controllo qualità del dataset"""
 
-    def _init_(self, percorso_file):
+    def __init__(self, percorso_file):
         self.percorso_file = Path(percorso_file)
         self.data = None
         self.report = {
