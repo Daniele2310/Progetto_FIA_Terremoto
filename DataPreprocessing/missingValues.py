@@ -56,22 +56,4 @@ class MissingValuesHandler:
         
         return self.report
     
-    def suggerisci_azioni(self):
-        """Suggerisce azioni di pulizia basate sull'analisi."""
-        suggerimenti = []
-        
-        if self.report.get('sparse_cols'):
-            num_cols = len(self.report['sparse_cols'])
-            suggerimenti.append(f"Rimuovere {num_cols} colonne sparse")
-        
-        if self.report.get('sparse_rows'):
-            num_rows = len(self.report['sparse_rows'])
-            suggerimenti.append(f"Rimuovere {num_rows} righe sparse")
-        
-        label_dist = self.report.get('label_percent', {})
-        if label_dist:
-            values = list(label_dist.values())
-            if values and (max(values) - min(values)) > 20:
-                suggerimenti.append("Applicare resampling per bilanciare il dataset")
-        
-        return suggerimenti
+
