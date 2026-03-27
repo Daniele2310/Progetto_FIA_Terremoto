@@ -21,12 +21,7 @@ def main():
     
     handler = MissingValuesHandler(null_threshold=70)
     report = handler.analizza(df_merged, target_col='damage_grade')
-    
-    suggerimenti = handler.suggerisci_azioni()
-    if suggerimenti:
-        print("\nSuggerimenti:")
-        for sug in suggerimenti:
-            print(f"  - {sug}")
+
     
     return train_values, train_labels, test_values, report
 
