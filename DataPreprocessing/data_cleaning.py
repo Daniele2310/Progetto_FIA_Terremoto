@@ -70,9 +70,6 @@ class DataQualityHandler:
         outliers_df = pd.DataFrame(outliers_summary).T.round(2)
         self.report["outliers"] = outliers_df
 
-        print("\nReport outlier:")
-        print(outliers_df)
-
         return outliers_df
 
     def plot_boxplot(self, colonne=COLONNE_CONTINUE):
