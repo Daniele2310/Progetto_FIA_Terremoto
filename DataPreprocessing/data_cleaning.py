@@ -24,9 +24,6 @@ class DataQualityHandler:
         """Standardizza i nomi delle colonne."""
         self.data.columns = self.data.columns.str.lower().str.strip()
 
-        print("\nNomi colonne standardizzati:")
-        print(self.data.columns.tolist())
-
         return self.data
 
     def controlla_duplicati_building_id(self):

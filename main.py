@@ -21,10 +21,20 @@ def main():
     # analisi training set
     train_quality_handler = DataQualityHandler(train_values)
     train_quality_report = train_quality_handler.esegui_controlli(plot=False)
+    
+    print("\n" + "="*80)
+    print("REPORT OUTLIER TRAINING SET")
+    print("="*80)
+    print(train_quality_report["outliers"])
 
     # analisi del test set
     test_quality_handler = DataQualityHandler(test_values)
     test_quality_report = test_quality_handler.esegui_controlli(plot=False)
+    
+    print("\n" + "="*80)
+    print("REPORT OUTLIER TEST SET")
+    print("="*80)
+    print(test_quality_report["outliers"])
 
     df_merged = pd.merge(train_values, train_labels, on='building_id')
     
