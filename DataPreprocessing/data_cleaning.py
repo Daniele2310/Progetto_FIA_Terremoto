@@ -50,10 +50,36 @@ class DataQualityHandler:
             Q3 = self.data[col].quantile(0.75)
             IQR = Q3 - Q1
 
-            lower = Q1 - 1.5 * IQR
-            upper = Q3 + 1.5 * IQR
+            # GESTIONE IQR = 0 E CODE LUNGHE
+            if IQR == 0:
+                # 1. Calcoliamo la frequenza relativa di ogni valore presente nella colonna
+                frequenze = self.data[col].value_counts(normalize=True)
 
-            mask_outliers = (self.data[col] < lower) | (self.data[col] > upper)
+                # 2. Definiamo una soglia di rarità rigorosa (es. meno dello 0.5% del dataset)
+                soglia_rarita = 0.005
+
+                # 3. Troviamo quali sono i valori "rari"
+                valori_anomali = frequenze[frequenze < soglia_rarita].index
+
+                # 4. Creiamo la maschera per gli outlier basata sulla rarità
+                mask_outliers = self.data[col].isin(valori_anomali)
+
+                # Nota: lower e upper qui perdono di significato continuo,
+                # ma possiamo impostarli ai valori min/max non rari per compatibilità con il tuo dizionario
+                valori_normali = frequenze[frequenze >= soglia_rarita].index
+                lower = valori_normali.min()
+                upper = valori_normali.max()
+            else:
+                # Usiamo 3.0 (Extreme IQR) invece di 1.5 per le distribuzioni asimmetriche fisiche
+                # in alternativa, potresti mantenere 1.5 ma calcolarlo su np.log1p(valid_data)
+                lower = Q1 - 3.0 * IQR
+                upper = Q3 + 3.0 * IQR
+                # lower = Q1 - 1.5 * IQR
+                # upper = Q3 + 1.5 * IQR
+
+                lower = max(0, lower)
+                mask_outliers = (self.data[col] < lower) | (self.data[col] > upper)
+
             n_outliers = mask_outliers.sum()
             perc_outliers = mask_outliers.mean() * 100
 
