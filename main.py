@@ -21,7 +21,7 @@ def main():
 
     # analisi training set
     train_quality_handler = DataQualityHandler(train_values)
-    train_quality_report = train_quality_handler.esegui_controlli(plot=False)
+    train_quality_report = train_quality_handler.esegui_controlli(plot=True)
     
     print("\n" + "="*80)
     print("REPORT OUTLIER TRAINING SET")
@@ -30,7 +30,7 @@ def main():
 
     # analisi del test set
     test_quality_handler = DataQualityHandler(test_values)
-    test_quality_report = test_quality_handler.esegui_controlli(plot=False)
+    test_quality_report = test_quality_handler.esegui_controlli(plot=True)
     
     print("\n" + "="*80)
     print("REPORT OUTLIER TEST SET")
