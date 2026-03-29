@@ -6,6 +6,7 @@ import pandas as pd
 from DataPreprocessing.puliziaASCII import PuliziaASCII, COLONNE_CATEGORICHE
 from DataPreprocessing.missingValues import MissingValuesHandler
 from DataPreprocessing.data_cleaning import DataQualityHandler
+from DataPreprocessing.validation import DataValidator
 
 
 def main():
@@ -36,14 +37,22 @@ def main():
     print("="*80)
     print(test_quality_report["outliers"])
 
+    # validazione feature booleane e categoriche (training set)
+    validator_train = DataValidator(train_values)
+    validation_report_train = validator_train.esegui_validazione(verbose=True)
+
+    # validazione feature booleane e categoriche (test set)
+    validator_test = DataValidator(test_values)
+    validation_report_test = validator_test.esegui_validazione(verbose=True)
+
     df_merged = pd.merge(train_values, train_labels, on='building_id')
     
     handler = MissingValuesHandler(null_threshold=70)
     report = handler.analizza(df_merged, target_col='damage_grade')
 
     
-    return train_values, train_labels, test_values, report, train_quality_report, test_quality_report
+    return train_values, train_labels, test_values, report, train_quality_report, test_quality_report, validation_report_train, validation_report_test
 
 
 if __name__ == '__main__':
-    train_values, train_labels, test_values, report, train_quality_report, test_quality_report = main()
+    train_values, train_labels, test_values, report, train_quality_report, test_quality_report, validation_report_train, validation_report_test = main()
