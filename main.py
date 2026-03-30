@@ -8,6 +8,11 @@ from DataPreprocessing.missingValues import MissingValuesHandler
 from DataPreprocessing.data_cleaning import DataQualityHandler
 from DataPreprocessing.validation import DataValidator
 
+# Configura pandas per mostrare tutte le colonne nei report
+pd.set_option('display.max_columns', None)
+pd.set_option('display.width', None)
+pd.set_option('display.max_colwidth', None)
+
 
 def main():
     print("Preprocessing Terremoto Nepal 2015")
