@@ -8,16 +8,13 @@ from DataPreprocessing.missingValues import MissingValuesHandler
 from DataPreprocessing.data_cleaning import DataQualityHandler
 from DataPreprocessing.validation import DataValidator
 
-# Configura pandas per mostrare tutte le colonne nei report
-pd.set_option('display.max_columns', None)
-pd.set_option('display.width', None)
-pd.set_option('display.max_colwidth', None)
-
 
 def main():
     print("Preprocessing Terremoto Nepal 2015")
 
-    # Caricamento e pulizia ASCII
+    # =======================
+    # CARICAMENTO E PULIZIA ASCII
+    # =======================
     pulizia = PuliziaASCII()
     train_values, train_labels, test_values = pulizia.processa(
         colonne_categoriche=COLONNE_CATEGORICHE
@@ -29,8 +26,13 @@ def main():
     train_quality_handler = DataQualityHandler(train_values)
     train_quality_report = train_quality_handler.esegui_controlli(plot=False)
 
-    # Aggiorno il dataframe con le modifiche effettuate nel handler
+    # Aggiorno il dataframe con le modifiche effettuate nell'handler
     train_values = train_quality_handler.data
+
+    print("\n" + "=" * 80)
+    print("REPORT OUTLIER TRAINING SET")
+    print("=" * 80)
+    print(train_quality_report["outliers"])
 
     # =======================
     # NORMALIZZAZIONE TRAIN
@@ -39,9 +41,9 @@ def main():
     train_values = train_quality_handler.applica_normalizzazione(scaler)
 
     print("\n" + "=" * 80)
-    print("REPORT OUTLIER TRAINING SET")
+    print("VERIFICA NORMALIZZAZIONE TRAIN")
     print("=" * 80)
-    print(train_quality_report["outliers"])
+    print(train_values[["area_percentage", "height_percentage"]].agg(["min", "max"]))
 
     # =======================
     # DATA QUALITY TEST
@@ -49,13 +51,8 @@ def main():
     test_quality_handler = DataQualityHandler(test_values)
     test_quality_report = test_quality_handler.esegui_controlli(plot=False)
 
-    # Aggiorno il dataframe con le modifiche effettuate nel handler
+    # Aggiorno il dataframe con le modifiche effettuate nell'handler
     test_values = test_quality_handler.data
-
-    # =======================
-    # NORMALIZZAZIONE TEST
-    # =======================
-    test_values = test_quality_handler.applica_normalizzazione(scaler)
 
     print("\n" + "=" * 80)
     print("REPORT OUTLIER TEST SET")
@@ -63,24 +60,37 @@ def main():
     print(test_quality_report["outliers"])
 
     # =======================
-    # VALIDAZIONE
+    # NORMALIZZAZIONE TEST
+    # =======================
+    test_values = test_quality_handler.applica_normalizzazione(scaler)
+
+    print("\n" + "=" * 80)
+    print("VERIFICA NORMALIZZAZIONE TEST")
+    print("=" * 80)
+    print(test_values[["area_percentage", "height_percentage"]].agg(["min", "max"]))
+
+    # =======================
+    # VALIDAZIONE TRAIN
     # =======================
     validator_train = DataValidator(train_values)
     validation_report_train = validator_train.esegui_validazione(verbose=True)
 
+    # =======================
+    # VALIDAZIONE TEST
+    # =======================
     validator_test = DataValidator(test_values)
     validation_report_test = validator_test.esegui_validazione(verbose=True)
 
     # =======================
     # MERGE TRAIN + LABELS
     # =======================
-    df_merged = pd.merge(train_values, train_labels, on='building_id')
+    df_merged = pd.merge(train_values, train_labels, on="building_id")
 
     # =======================
     # MISSING VALUES
     # =======================
     handler = MissingValuesHandler(null_threshold=70)
-    report = handler.analizza(df_merged, target_col='damage_grade')
+    report = handler.analizza(df_merged, target_col="damage_grade")
 
     print("\nPreprocessing completato.")
 
@@ -96,7 +106,7 @@ def main():
     )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     (
         train_values,
         train_labels,
