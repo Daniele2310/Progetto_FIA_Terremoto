@@ -1,5 +1,6 @@
 import pandas as pd
 import matplotlib.pyplot as plt
+from sklearn.preprocessing import MinMaxScaler
 
 COLONNE_CONTINUE = [
     "count_floors_pre_eq",
@@ -9,15 +10,23 @@ COLONNE_CONTINUE = [
     "count_families"
 ]
 
+COLONNE_DA_NORMALIZZARE = [
+    "area_percentage",
+    "height_percentage"
+]
+
+
 class DataQualityHandler:
     """Classe per il controllo qualità del dataset."""
 
     def __init__(self, data: pd.DataFrame):
         self.data = data.copy()
+        self.scaler = None
         self.report = {
             "shape": self.data.shape,
             "duplicati_building_id": 0,
-            "outliers": None
+            "outliers": None,
+            "normalizzazione": None
         }
 
     def pulisci_nomi_colonne(self):
@@ -120,6 +129,55 @@ class DataQualityHandler:
 
         plt.tight_layout()
         plt.show()
+
+    def fit_normalizzazione(self, colonne=COLONNE_DA_NORMALIZZARE):
+        """
+        Esegue il fit del MinMaxScaler sul training set.
+        """
+        colonne_presenti = [col for col in colonne if col in self.data.columns]
+
+        if not colonne_presenti:
+            raise ValueError("Nessuna colonna da normalizzare presente nel dataset.")
+
+        self.scaler = MinMaxScaler(feature_range=(0, 1), clip=False)
+        self.scaler.fit(self.data[colonne_presenti])
+
+        self.report["normalizzazione"] = {
+            col: {
+                "min_train": float(self.scaler.data_min_[i]),
+                "max_train": float(self.scaler.data_max_[i])
+            }
+            for i, col in enumerate(colonne_presenti)
+        }
+
+        for col, valori in self.report["normalizzazione"].items():
+            print(
+                f"Parametri salvati per '{col}': "
+                f"min={valori['min_train']}, max={valori['max_train']}"
+            )
+
+        return self.scaler
+
+    def applica_normalizzazione(self, scaler=None, colonne=COLONNE_DA_NORMALIZZARE):
+        """
+        Applica la normalizzazione usando uno scaler già fittato.
+        """
+        if scaler is None:
+            scaler = self.scaler
+
+        if scaler is None:
+            raise ValueError("Scaler non disponibile. Esegui prima fit_normalizzazione() sul train.")
+
+        colonne_presenti = [col for col in colonne if col in self.data.columns]
+
+        if not colonne_presenti:
+            print("Nessuna colonna da normalizzare presente nel dataset.")
+            return self.data
+
+        self.data[colonne_presenti] = scaler.transform(self.data[colonne_presenti])
+
+        print(f"Normalizzazione applicata alle colonne: {colonne_presenti}")
+        return self.data
 
     def esegui_controlli(self, plot=False):
         """Esegue i controlli principali di data quality."""
