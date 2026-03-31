@@ -9,11 +9,18 @@ from DataPreprocessing.data_cleaning import DataQualityHandler
 from DataPreprocessing.validation import DataValidator
 
 
+def format_number(n):
+    """Formatta numero con separatore migliaia."""
+    return f"{n:,}".replace(",", ".")
+
+
 def main():
-    print("Preprocessing Terremoto Nepal 2015")
+    print("\n" + "=" * 80)
+    print(" PREPROCESSING TERREMOTO NEPAL 2015")
+    print("=" * 80)
 
     # =======================
-    # CARICAMENTO E PULIZIA ASCII
+    # CARICAMENTO DATI
     # =======================
     pulizia = PuliziaASCII()
     train_values, train_labels, test_values = pulizia.processa(
@@ -92,7 +99,9 @@ def main():
     handler = MissingValuesHandler(null_threshold=70)
     report = handler.analizza(df_merged, target_col="damage_grade")
 
-    print("\nPreprocessing completato.")
+    print("\n" + "=" * 80)
+    print("✅  PREPROCESSING COMPLETATO")
+    print("=" * 80)
 
     return (
         train_values,
@@ -102,7 +111,7 @@ def main():
         train_quality_report,
         test_quality_report,
         validation_report_train,
-        validation_report_test
+        validation_report_test,
     )
 
 
