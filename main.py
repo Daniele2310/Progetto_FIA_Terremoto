@@ -16,7 +16,7 @@ def format_number(n):
 
 def main():
     print("\n" + "=" * 80)
-    print(" PREPROCESSING TERREMOTO NEPAL 2015")
+    print("PREPROCESSING TERREMOTO NEPAL 2015")
     print("=" * 80)
 
     # =======================
@@ -42,15 +42,16 @@ def main():
     print(train_quality_report["outliers"])
 
     # =======================
-    # NORMALIZZAZIONE TRAIN
+    # STANDARDIZZAZIONE TRAIN
     # =======================
-    scaler = train_quality_handler.fit_normalizzazione()
-    train_values = train_quality_handler.applica_normalizzazione(scaler)
+    scaler = train_quality_handler.fit_standardizzazione()
+    train_values = train_quality_handler.applica_standardizzazione(scaler)
 
     print("\n" + "=" * 80)
-    print("VERIFICA NORMALIZZAZIONE TRAIN")
+    print("VERIFICA STANDARDIZZAZIONE TRAIN")
     print("=" * 80)
-    print(train_values[["area_percentage", "height_percentage"]].agg(["min", "max"]))
+    cols_to_check = ["count_floors_pre_eq", "age", "area_percentage", "height_percentage", "count_families"]
+    print(train_values[cols_to_check].agg(["min", "max"]))
 
     # =======================
     # DATA QUALITY TEST
@@ -67,14 +68,15 @@ def main():
     print(test_quality_report["outliers"])
 
     # =======================
-    # NORMALIZZAZIONE TEST
+    # STANDARDIZZAZIONE TEST
     # =======================
-    test_values = test_quality_handler.applica_normalizzazione(scaler)
+    test_values = test_quality_handler.applica_standardizzazione(scaler)
 
     print("\n" + "=" * 80)
-    print("VERIFICA NORMALIZZAZIONE TEST")
+    print("VERIFICA STANDARDIZZAZIONE TEST")
     print("=" * 80)
-    print(test_values[["area_percentage", "height_percentage"]].agg(["min", "max"]))
+    cols_to_check = ["count_floors_pre_eq", "age", "area_percentage", "height_percentage", "count_families"]
+    print(test_values[cols_to_check].agg(["min", "max"]))
 
     # =======================
     # VALIDAZIONE TRAIN

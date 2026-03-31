@@ -1,6 +1,6 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import StandardScaler
 
 COLONNE_CONTINUE = [
     "count_floors_pre_eq",
@@ -10,9 +10,12 @@ COLONNE_CONTINUE = [
     "count_families"
 ]
 
-COLONNE_DA_NORMALIZZARE = [
+COLONNE_DA_STANDARDIZZARE = [
+    "count_floors_pre_eq",
+    "age",
     "area_percentage",
-    "height_percentage"
+    "height_percentage",
+    "count_families"
 ]
 
 
@@ -130,53 +133,53 @@ class DataQualityHandler:
         plt.tight_layout()
         plt.show()
 
-    def fit_normalizzazione(self, colonne=COLONNE_DA_NORMALIZZARE):
+    def fit_standardizzazione(self, colonne=COLONNE_DA_STANDARDIZZARE):
         """
-        Esegue il fit del MinMaxScaler sul training set.
+        Esegue il fit dello StandardScaler sul training set.
         """
         colonne_presenti = [col for col in colonne if col in self.data.columns]
 
         if not colonne_presenti:
-            raise ValueError("Nessuna colonna da normalizzare presente nel dataset.")
+            raise ValueError("Nessuna colonna da standardizzare presente nel dataset.")
 
-        self.scaler = MinMaxScaler(feature_range=(0, 1), clip=False)
+        self.scaler = StandardScaler()
         self.scaler.fit(self.data[colonne_presenti])
 
-        self.report["normalizzazione"] = {
+        self.report["standardizzazione"] = {
             col: {
-                "min_train": float(self.scaler.data_min_[i]),
-                "max_train": float(self.scaler.data_max_[i])
+                "mean_train": float(self.scaler.mean_[i]),
+                "std_train": float(self.scaler.scale_[i])
             }
             for i, col in enumerate(colonne_presenti)
         }
 
-        for col, valori in self.report["normalizzazione"].items():
+        for col, valori in self.report["standardizzazione"].items():
             print(
                 f"Parametri salvati per '{col}': "
-                f"min={valori['min_train']}, max={valori['max_train']}"
+                f"mean={valori['mean_train']:.4f}, std={valori['std_train']:.4f}"
             )
 
         return self.scaler
 
-    def applica_normalizzazione(self, scaler=None, colonne=COLONNE_DA_NORMALIZZARE):
+    def applica_standardizzazione(self, scaler=None, colonne=COLONNE_DA_STANDARDIZZARE):
         """
-        Applica la normalizzazione usando uno scaler già fittato.
+        Applica la standardizzazione usando uno scaler già fittato.
         """
         if scaler is None:
             scaler = self.scaler
 
         if scaler is None:
-            raise ValueError("Scaler non disponibile. Esegui prima fit_normalizzazione() sul train.")
+            raise ValueError("Scaler non disponibile. Esegui prima fit_standardizzazione() sul train.")
 
         colonne_presenti = [col for col in colonne if col in self.data.columns]
 
         if not colonne_presenti:
-            print("Nessuna colonna da normalizzare presente nel dataset.")
+            print("Nessuna colonna da standardizzare presente nel dataset.")
             return self.data
 
         self.data[colonne_presenti] = scaler.transform(self.data[colonne_presenti])
 
-        print(f"Normalizzazione applicata alle colonne: {colonne_presenti}")
+        print(f"Standardizzazione applicata alle colonne: {colonne_presenti}")
         return self.data
 
     def esegui_controlli(self, plot=False):
