@@ -110,6 +110,8 @@ class DataQualityHandler:
 
         return outliers_df
 
+
+
     def plot_boxplot(self, colonne=COLONNE_CONTINUE):
         """Mostra i boxplot delle colonne continue."""
         colonne_presenti = [col for col in colonne if col in self.data.columns]
@@ -132,6 +134,43 @@ class DataQualityHandler:
 
         plt.tight_layout()
         plt.show()
+
+    def aggiungi_feature_age_flag(self, upper_bound, max_age_considerata=250):
+        """
+        Aggiunge una feature booleana:
+        - 1 se age > upper_bound e age <= max_age_considerata
+        - 0 altrimenti
+
+        Parametri
+        ----------
+        upper_bound : float
+            Upper bound calcolato sull'età dal training set.
+        max_age_considerata : int, default=250
+            Valore massimo di age da considerare per assegnare il flag.
+            Se age > 250, il flag resta 0.
+        """
+        if "age" not in self.data.columns:
+            raise ValueError("La colonna 'age' non è presente nel dataset.")
+
+        self.data["age_flag"] = (
+                (self.data["age"] > upper_bound) &
+                (self.data["age"] <= max_age_considerata)
+        ).astype(int)
+
+        counts = self.data["age_flag"].value_counts()
+
+        n_1 = counts.get(1, 0)
+        n_0 = counts.get(0, 0)
+
+        print(
+            f"Feature 'age_flag' aggiunta usando upper_bound={upper_bound:.3f} "
+            f"e max_age_considerata={max_age_considerata}\n"
+            f"Valori 1: {n_1}\n"
+            f"Valori 0: {n_0}"
+        )
+
+        return self.data
+
 
     def fit_standardizzazione(self, colonne=COLONNE_DA_STANDARDIZZARE):
         """
