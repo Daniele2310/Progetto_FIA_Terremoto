@@ -36,6 +36,19 @@ def main():
     # Aggiorno il dataframe con le modifiche effettuate nell'handler
     train_values = train_quality_handler.data
 
+    # Recupero l'upper bound di age calcolato sul training set
+    age_upper_bound_train = train_quality_report["outliers"].loc["age", "upper_bound"]
+
+    print("\n" + "=" * 80)
+    print("CREAZIONE NUOVA FEATURE NEL TRAINING SET")
+    print("=" * 80)
+
+    # Creo la feature booleana sul train usando la soglia del train
+    train_values = train_quality_handler.aggiungi_feature_age_flag(
+        upper_bound=age_upper_bound_train
+    )
+
+
     print("\n" + "=" * 80)
     print("REPORT OUTLIER TRAINING SET")
     print("=" * 80)
@@ -61,6 +74,16 @@ def main():
 
     # Aggiorno il dataframe con le modifiche effettuate nell'handler
     test_values = test_quality_handler.data
+
+    print("\n" + "=" * 80)
+    print("CREAZIONE NUOVA FEATURE NEL TEST SET")
+    print("=" * 80)
+
+    # Creo la feature booleana sul test usando LA STESSA soglia del train
+    test_values = test_quality_handler.aggiungi_feature_age_flag(
+        upper_bound=age_upper_bound_train
+    )
+
 
     print("\n" + "=" * 80)
     print("REPORT OUTLIER TEST SET")
