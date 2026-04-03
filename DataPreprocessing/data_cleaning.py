@@ -152,18 +152,18 @@ class DataQualityHandler:
         if "age" not in self.data.columns:
             raise ValueError("La colonna 'age' non è presente nel dataset.")
 
-        self.data["age_flag"] = (
+        self.data["monum_flag"] = (
                 (self.data["age"] > upper_bound) &
                 (self.data["age"] <= max_age_considerata)
         ).astype(int)
 
-        counts = self.data["age_flag"].value_counts()
+        counts = self.data["monum_flag"].value_counts()
 
         n_1 = counts.get(1, 0)
         n_0 = counts.get(0, 0)
 
         print(
-            f"Feature 'age_flag' aggiunta usando upper_bound={upper_bound:.3f} "
+            f"Feature 'monum_flag' aggiunta usando upper_bound={upper_bound:.3f} "
             f"e max_age_considerata={max_age_considerata}\n"
             f"Valori 1: {n_1}\n"
             f"Valori 0: {n_0}"

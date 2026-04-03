@@ -45,7 +45,7 @@ BOOLEAN_FEATURES = [
     'has_secondary_use_gov_office',
     'has_secondary_use_use_police',
     'has_secondary_use_other',
-    'age_flag'
+    'monum_flag'
 ]
 
 # Valori ammissibili di default per le feature booleane
