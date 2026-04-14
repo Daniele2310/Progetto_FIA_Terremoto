@@ -55,18 +55,6 @@ def main():
     print(train_quality_report["outliers"])
 
     # =======================
-    # STANDARDIZZAZIONE TRAIN
-    # =======================
-    scaler = train_quality_handler.fit_standardizzazione()
-    train_values = train_quality_handler.applica_standardizzazione(scaler)
-
-    print("\n" + "=" * 80)
-    print("VERIFICA STANDARDIZZAZIONE TRAIN")
-    print("=" * 80)
-    cols_to_check = ["count_floors_pre_eq", "age", "area_percentage", "height_percentage", "count_families"]
-    print(train_values[cols_to_check].agg(["min", "max"]))
-
-    # =======================
     # DATA QUALITY TEST
     # =======================
     test_quality_handler = DataQualityHandler(test_values)
@@ -91,14 +79,67 @@ def main():
     print(test_quality_report["outliers"])
 
     # =======================
+    # IMPUTAZIONE AGE: MULTIVARIATA
+    # =======================
+    missing_handler = MissingValuesHandler(null_threshold=70)
+    train_values, _, n_sost_train = missing_handler.sostituisci_range_con_nan(
+        train_values,
+        colonna="age",
+        min_val=250,
+        max_val=995,
+    )
+    test_values, _, n_sost_test = missing_handler.sostituisci_range_con_nan(
+        test_values,
+        colonna="age",
+        min_val=250,
+        max_val=995,
+    )
+
+    train_values, test_values, age_imputation_report = missing_handler.imputa_mediana_multivariata(
+        train_df=train_values,
+        test_df=test_values,
+        colonna="age",
+    )
+
+    age_imputation_report["range_sostituito"] = [250, 995]
+    age_imputation_report["n_valori_sostituiti_train"] = n_sost_train
+    age_imputation_report["n_valori_sostituiti_test"] = n_sost_test
+
+    print("\n" + "=" * 80)
+    print("IMPUTAZIONE AGE MULTIVARIATA")
+    print("=" * 80)
+    print(f"Valori in [250, 995] sostituiti con NaN - train: {n_sost_train}, test: {n_sost_test}")
+    print(
+        f"Missing age train prima/dopo: "
+        f"{age_imputation_report['n_missing_train_prima']} -> {age_imputation_report['n_missing_train_dopo']}"
+    )
+    print(
+        f"Missing age test prima/dopo: "
+        f"{age_imputation_report['n_missing_test_prima']} -> {age_imputation_report['n_missing_test_dopo']}"
+    )
+
+    # =======================
+    # STANDARDIZZAZIONE TRAIN
+    # =======================
+    train_quality_handler.data = train_values
+    scaler = train_quality_handler.fit_standardizzazione()
+    train_values = train_quality_handler.applica_standardizzazione(scaler)
+
+    print("\n" + "=" * 80)
+    print("VERIFICA STANDARDIZZAZIONE TRAIN")
+    print("=" * 80)
+    cols_to_check = ["count_floors_pre_eq", "age", "area_percentage", "height_percentage", "count_families"]
+    print(train_values[cols_to_check].agg(["min", "max"]))
+
+    # =======================
     # STANDARDIZZAZIONE TEST
     # =======================
+    test_quality_handler.data = test_values
     test_values = test_quality_handler.applica_standardizzazione(scaler)
 
     print("\n" + "=" * 80)
     print("VERIFICA STANDARDIZZAZIONE TEST")
     print("=" * 80)
-    cols_to_check = ["count_floors_pre_eq", "age", "area_percentage", "height_percentage", "count_families"]
     print(test_values[cols_to_check].agg(["min", "max"]))
 
     # =======================
@@ -123,6 +164,7 @@ def main():
     # =======================
     handler = MissingValuesHandler(null_threshold=70)
     report = handler.analizza(df_merged, target_col="damage_grade")
+    report["age_imputation_multivariata"] = age_imputation_report
 
     print("\n" + "=" * 80)
     print("✅  PREPROCESSING COMPLETATO")
