@@ -186,3 +186,46 @@ NOTE AGGIUNTIVE
 - Il dataset contiene valori mancanti che vanno gestiti
 - È possibile visualizzare il benchmark walkthrough per iniziare
 - Per domande tecnici è disponibile il forum della community
+
+================================================================================
+AGGIORNAMENTO DIARIO - 14/04/2026
+================================================================================
+
+Decisione su imputazione della variabile age:
+- I valori di age nel range 250-995 sono stati trattati come anomali/sentinel e
+    convertiti in NaN prima dell'imputazione.
+- Sono state valutate due strategie:
+    1) Univariata: mediana globale del train.
+    2) Multivariata: mediana per gruppi geografici in gerarchia
+         (geo_level_1_id + geo_level_2_id + geo_level_3_id,
+            poi geo_level_1_id + geo_level_2_id,
+            poi geo_level_1_id),
+         con fallback finale alla mediana globale del train.
+
+Motivazione della scelta multivariata:
+- La multivariata mantiene informazione locale/geografica e riduce
+    l'appiattimento dei valori imputati tipico della mediana unica globale.
+- Nel confronto operativo ha mostrato un leggero miglioramento sulle metriche
+    macro e di bilanciamento, quindi e stata mantenuta in pipeline.
+
+Validazione della scelta (confronto controllato):
+- Stesso split holdout stratificato (80/20), stesso random_state e stesso
+    modello baseline per entrambe le strategie.
+- Metriche confrontate: F1 macro, accuracy, balanced accuracy.
+
+Risultati ottenuti nel test comparativo:
+- Univariata:
+    F1 macro = 0.6541
+    Accuracy = 0.7187
+    Balanced accuracy = 0.6236
+- Multivariata:
+    F1 macro = 0.6547
+    Accuracy = 0.7186
+    Balanced accuracy = 0.6240
+
+Conclusione:
+- La multivariata e risultata lievemente migliore su F1 macro
+    (+0.0006) e balanced accuracy (+0.0004), quindi e stata scelta come
+    strategia finale.
+- Dopo la decisione, il codice e stato semplificato rimuovendo il ramo
+    univariato e il confronto runtime, mantenendo solo la pipeline multivariata.
