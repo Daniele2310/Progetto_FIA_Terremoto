@@ -188,7 +188,7 @@ NOTE AGGIUNTIVE
 - Per domande tecnici è disponibile il forum della community
 
 ================================================================================
-AGGIORNAMENTO DIARIO - 14/04/2026
+Luca - 14/04/2026
 ================================================================================
 
 Decisione su imputazione della variabile age:
@@ -227,5 +227,3 @@ Conclusione:
 - La multivariata e risultata lievemente migliore su F1 macro
     (+0.0006) e balanced accuracy (+0.0004), quindi e stata scelta come
     strategia finale.
-- Dopo la decisione, il codice e stato semplificato rimuovendo il ramo
-    univariato e il confronto runtime, mantenendo solo la pipeline multivariata.
