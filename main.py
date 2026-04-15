@@ -143,6 +143,22 @@ def main():
     print(test_values[cols_to_check].agg(["min", "max"]))
 
     # =======================
+    # ONE-HOT ENCODING
+    # =======================
+    print("\n" + "=" * 80)
+    print("ONE-HOT ENCODING (TRAIN & TEST)")
+    print("=" * 80)
+
+    # 1. Fit ed applicazione sul TRAIN (Impara le regole e trasforma)
+    train_quality_handler.data = train_values
+    ohe_encoder = train_quality_handler.fit_one_hot_encoding(COLONNE_CATEGORICHE)
+    train_values = train_quality_handler.applica_one_hot_encoding(ohe_encoder, COLONNE_CATEGORICHE)
+
+    # 2. Applicazione sul TEST (Usa le regole imparate dal train)
+    test_quality_handler.data = test_values
+    test_values = test_quality_handler.applica_one_hot_encoding(ohe_encoder, COLONNE_CATEGORICHE)
+
+    # =======================
     # VALIDAZIONE TRAIN
     # =======================
     validator_train = DataValidator(train_values)
