@@ -1,6 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import OneHotEncoder
 
 COLONNE_CONTINUE = [
     "count_floors_pre_eq",
@@ -231,3 +232,47 @@ class DataQualityHandler:
             self.plot_boxplot()
 
         return self.report
+
+    def fit_one_hot_encoding(self, colonne_categoriche):
+        """
+        Esegue il fit dell'OneHotEncoder sul training set.
+        """
+        colonne_presenti = [col for col in colonne_categoriche if col in self.data.columns]
+
+        if not colonne_presenti:
+            print("Nessuna colonna categorica da encodare.")
+            return None
+
+        # handle_unknown='ignore' previene errori se nel test ci sono categorie nuove
+        encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+        encoder.fit(self.data[colonne_presenti])
+
+        print(f"One-Hot Encoder addestrato su {len(colonne_presenti)} colonne categoriche.")
+        return encoder
+
+    def applica_one_hot_encoding(self, encoder, colonne_categoriche):
+        """
+        Applica l'OneHotEncoder usando un encoder già fittato e sostituisce le colonne.
+        """
+        if encoder is None:
+            raise ValueError("Encoder non disponibile. Esegui prima fit_one_hot_encoding() sul train.")
+
+        colonne_presenti = [col for col in colonne_categoriche if col in self.data.columns]
+
+        if not colonne_presenti:
+            return self.data
+
+        # 1. Trasformiamo le colonne categoriche
+        dati_encodati = encoder.transform(self.data[colonne_presenti])
+
+        # 2. Recuperiamo i nomi delle nuove colonne (es. 'foundation_type_r')
+        nomi_nuove_colonne = encoder.get_feature_names_out(colonne_presenti)
+
+        # 3. Creiamo un DataFrame con le nuove colonne (mantenendo lo stesso index!)
+        df_dummy = pd.DataFrame(dati_encodati, columns=nomi_nuove_colonne, index=self.data.index).astype(int)
+
+        # 4. Rimuoviamo le vecchie colonne dal dataset e uniamo quelle nuove
+        self.data = pd.concat([self.data.drop(columns=colonne_presenti), df_dummy], axis=1)
+
+        print(f"One-Hot Encoding applicato. Nuove dimensioni dataset: {self.data.shape}")
+        return self.data
