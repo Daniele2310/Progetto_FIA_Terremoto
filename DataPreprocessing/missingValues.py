@@ -4,6 +4,11 @@ Modulo MissingValues - Controllo valori nulli e bilanciamento labels
 
 import numpy as np
 import pandas as pd
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
+from sklearn.preprocessing import StandardScaler
 
 
 class MissingValuesHandler:
@@ -191,5 +196,398 @@ class MissingValuesHandler:
 
         return train_out, test_out, report
 
-    
+    def imputa_univariata_media(self, train_df, test_df, colonna='age'):
+        """
+        Imputazione univariata con media calcolata sul train.
+        """
+        if colonna not in train_df.columns or colonna not in test_df.columns:
+            raise ValueError(f"La colonna '{colonna}' deve essere presente in train e test.")
+
+        media_train = train_df[colonna].mean()
+        if pd.isna(media_train):
+            raise ValueError(f"Impossibile calcolare la media della colonna '{colonna}' sul train.")
+
+        media_train = float(media_train)
+
+        train_out = train_df.copy()
+        test_out = test_df.copy()
+
+        n_missing_train_prima = int(train_out[colonna].isna().sum())
+        n_missing_test_prima = int(test_out[colonna].isna().sum())
+
+        train_out[colonna] = train_out[colonna].fillna(media_train)
+        test_out[colonna] = test_out[colonna].fillna(media_train)
+
+        n_missing_train_dopo = int(train_out[colonna].isna().sum())
+        n_missing_test_dopo = int(test_out[colonna].isna().sum())
+
+        report = {
+            'strategia': 'univariata_media',
+            'colonna': colonna,
+            'valore_imputazione_train': media_train,
+            'n_missing_train_prima': n_missing_train_prima,
+            'n_missing_train_dopo': n_missing_train_dopo,
+            'n_missing_test_prima': n_missing_test_prima,
+            'n_missing_test_dopo': n_missing_test_dopo
+        }
+
+        return train_out, test_out, report
+
+    def imputa_univariata_mediana(self, train_df, test_df, colonna='age'):
+        """
+        Imputazione univariata con mediana calcolata sul train.
+        """
+        if colonna not in train_df.columns or colonna not in test_df.columns:
+            raise ValueError(f"La colonna '{colonna}' deve essere presente in train e test.")
+
+        mediana_train = train_df[colonna].median()
+        if pd.isna(mediana_train):
+            raise ValueError(f"Impossibile calcolare la mediana della colonna '{colonna}' sul train.")
+
+        mediana_train = float(mediana_train)
+
+        train_out = train_df.copy()
+        test_out = test_df.copy()
+
+        n_missing_train_prima = int(train_out[colonna].isna().sum())
+        n_missing_test_prima = int(test_out[colonna].isna().sum())
+
+        train_out[colonna] = train_out[colonna].fillna(mediana_train)
+        test_out[colonna] = test_out[colonna].fillna(mediana_train)
+
+        n_missing_train_dopo = int(train_out[colonna].isna().sum())
+        n_missing_test_dopo = int(test_out[colonna].isna().sum())
+
+        report = {
+            'strategia': 'univariata_mediana',
+            'colonna': colonna,
+            'valore_imputazione_train': mediana_train,
+            'n_missing_train_prima': n_missing_train_prima,
+            'n_missing_train_dopo': n_missing_train_dopo,
+            'n_missing_test_prima': n_missing_test_prima,
+            'n_missing_test_dopo': n_missing_test_dopo
+        }
+
+        return train_out, test_out, report
+
+    def imputa_univariata_media_mediana(self, train_df, test_df, colonna='age'):
+        """
+        Richiama entrambe le imputazioni univariate: media e mediana.
+        """
+        train_media, test_media, report_media = self.imputa_univariata_media(
+            train_df=train_df,
+            test_df=test_df,
+            colonna=colonna
+        )
+
+        train_mediana, test_mediana, report_mediana = self.imputa_univariata_mediana(
+            train_df=train_df,
+            test_df=test_df,
+            colonna=colonna
+        )
+
+        return {
+            'media': {
+                'train': train_media,
+                'test': test_media,
+                'report': report_media
+            },
+            'mediana': {
+                'train': train_mediana,
+                'test': test_mediana,
+                'report': report_mediana
+            }
+        }
+
+    def _seleziona_feature_numeriche(self, df, colonna_target, feature_cols=None):
+        """
+        Seleziona feature numeriche da usare come predittori.
+        """
+        if feature_cols is None:
+            feature_cols = [
+                c for c in df.select_dtypes(include=[np.number]).columns
+                if c not in {colonna_target, 'building_id'}
+            ]
+
+        feature_cols = [c for c in feature_cols if c in df.columns and c != colonna_target]
+
+        if not feature_cols:
+            raise ValueError(
+                f"Nessuna feature numerica disponibile per predire '{colonna_target}'."
+            )
+
+        return feature_cols
+
+    def _prepara_predictor_numerici(self, train_df, test_df, feature_cols):
+        """
+        Prepara i predittori numerici riempiendo i missing con mediana del train.
+        """
+        X_train = train_df[feature_cols].copy()
+        X_test = test_df[feature_cols].copy()
+
+        mediane = X_train.median(numeric_only=True)
+        X_train = X_train.fillna(mediane)
+        X_test = X_test.fillna(mediane)
+
+        return X_train, X_test
+
+    def imputa_multivariata_regressione_lineare(self, train_df, test_df, colonna='age', feature_cols=None):
+        """
+        Imputazione multivariata con regressione lineare sui predittori numerici.
+        """
+        if colonna not in train_df.columns or colonna not in test_df.columns:
+            raise ValueError(f"La colonna '{colonna}' deve essere presente in train e test.")
+
+        feature_cols = self._seleziona_feature_numeriche(train_df, colonna, feature_cols)
+        X_train, X_test = self._prepara_predictor_numerici(train_df, test_df, feature_cols)
+
+        train_out = train_df.copy()
+        test_out = test_df.copy()
+
+        mask_target_nota = train_out[colonna].notna()
+        n_noti = int(mask_target_nota.sum())
+
+        if n_noti < 2:
+            raise ValueError(
+                f"Valori noti insufficienti in '{colonna}' per la regressione lineare (trovati: {n_noti})."
+            )
+
+        model = LinearRegression()
+        model.fit(X_train.loc[mask_target_nota], train_out.loc[mask_target_nota, colonna])
+
+        n_missing_train_prima = int(train_out[colonna].isna().sum())
+        n_missing_test_prima = int(test_out[colonna].isna().sum())
+
+        mask_missing_train = train_out[colonna].isna()
+        if mask_missing_train.any():
+            pred_train = model.predict(X_train.loc[mask_missing_train])
+            train_out.loc[mask_missing_train, colonna] = np.clip(pred_train, a_min=0, a_max=None)
+
+        mask_missing_test = test_out[colonna].isna()
+        if mask_missing_test.any():
+            pred_test = model.predict(X_test.loc[mask_missing_test])
+            test_out.loc[mask_missing_test, colonna] = np.clip(pred_test, a_min=0, a_max=None)
+
+        n_missing_train_dopo = int(train_out[colonna].isna().sum())
+        n_missing_test_dopo = int(test_out[colonna].isna().sum())
+
+        report = {
+            'strategia': 'multivariata_regressione_lineare',
+            'colonna': colonna,
+            'n_feature_usate': len(feature_cols),
+            'feature_usate': feature_cols,
+            'n_missing_train_prima': n_missing_train_prima,
+            'n_missing_train_dopo': n_missing_train_dopo,
+            'n_missing_test_prima': n_missing_test_prima,
+            'n_missing_test_dopo': n_missing_test_dopo
+        }
+
+        return train_out, test_out, report
+
+    def imputa_knn_predictor(self, train_df, test_df, colonna='age', feature_cols=None, n_neighbors=5):
+        """
+        Imputazione con KNN Regressor sui predittori numerici.
+        """
+        if colonna not in train_df.columns or colonna not in test_df.columns:
+            raise ValueError(f"La colonna '{colonna}' deve essere presente in train e test.")
+
+        feature_cols = self._seleziona_feature_numeriche(train_df, colonna, feature_cols)
+        X_train, X_test = self._prepara_predictor_numerici(train_df, test_df, feature_cols)
+
+        train_out = train_df.copy()
+        test_out = test_df.copy()
+
+        mask_target_nota = train_out[colonna].notna()
+        n_noti = int(mask_target_nota.sum())
+
+        if n_noti < 2:
+            raise ValueError(
+                f"Valori noti insufficienti in '{colonna}' per KNN predictor (trovati: {n_noti})."
+            )
+
+        n_neighbors_eff = max(1, min(int(n_neighbors), n_noti))
+
+        model = KNeighborsRegressor(
+            n_neighbors=n_neighbors_eff,
+            weights='distance',
+            algorithm='brute',
+            n_jobs=-1
+        )
+        model.fit(X_train.loc[mask_target_nota], train_out.loc[mask_target_nota, colonna])
+
+        n_missing_train_prima = int(train_out[colonna].isna().sum())
+        n_missing_test_prima = int(test_out[colonna].isna().sum())
+
+        mask_missing_train = train_out[colonna].isna()
+        if mask_missing_train.any():
+            pred_train = model.predict(X_train.loc[mask_missing_train])
+            train_out.loc[mask_missing_train, colonna] = np.clip(pred_train, a_min=0, a_max=None)
+
+        mask_missing_test = test_out[colonna].isna()
+        if mask_missing_test.any():
+            pred_test = model.predict(X_test.loc[mask_missing_test])
+            test_out.loc[mask_missing_test, colonna] = np.clip(pred_test, a_min=0, a_max=None)
+
+        n_missing_train_dopo = int(train_out[colonna].isna().sum())
+        n_missing_test_dopo = int(test_out[colonna].isna().sum())
+
+        report = {
+            'strategia': 'knn_predictor',
+            'colonna': colonna,
+            'n_feature_usate': len(feature_cols),
+            'feature_usate': feature_cols,
+            'n_neighbors': n_neighbors_eff,
+            'n_missing_train_prima': n_missing_train_prima,
+            'n_missing_train_dopo': n_missing_train_dopo,
+            'n_missing_test_prima': n_missing_test_prima,
+            'n_missing_test_dopo': n_missing_test_dopo
+        }
+
+        return train_out, test_out, report
+
+    def _estrai_target(self, train_df, train_labels, target_col='damage_grade'):
+        """
+        Estrae il target allineato al train dataframe.
+        """
+        if isinstance(train_labels, pd.Series):
+            y = train_labels.reset_index(drop=True)
+            if len(y) != len(train_df):
+                raise ValueError('La Series train_labels non ha la stessa lunghezza del train_df.')
+            return y
+
+        if not isinstance(train_labels, pd.DataFrame):
+            raise ValueError('train_labels deve essere una Series o DataFrame.')
+
+        if target_col not in train_labels.columns:
+            raise ValueError(f"La colonna target '{target_col}' non e presente in train_labels.")
+
+        if 'building_id' in train_labels.columns and 'building_id' in train_df.columns:
+            mappa_target = train_labels.set_index('building_id')[target_col]
+            y = train_df['building_id'].map(mappa_target)
+            return y.reset_index(drop=True)
+
+        y = train_labels[target_col].reset_index(drop=True)
+        if len(y) != len(train_df):
+            raise ValueError('train_labels non e allineabile a train_df per lunghezza.')
+
+        return y
+
+    def valuta_strategie_con_knn_veloce(
+        self,
+        train_df,
+        train_labels,
+        colonna='age',
+        target_col='damage_grade',
+        strategie=None,
+        test_size=0.2,
+        random_state=42,
+        max_rows=20000,
+        n_neighbors_valutazione=5
+    ):
+        """
+        Valuta le strategie di imputazione con un KNN classifier veloce.
+        Ritorna una tabella con accuracy per confrontare i metodi.
+        """
+        if colonna not in train_df.columns:
+            raise ValueError(f"La colonna '{colonna}' non e presente nel train_df.")
+
+        if strategie is None:
+            strategie = [
+                'univariata_media',
+                'univariata_mediana',
+                'multivariata_regressione_lineare',
+                'knn_predictor'
+            ]
+
+        y = self._estrai_target(train_df=train_df, train_labels=train_labels, target_col=target_col)
+        X_base = train_df.copy().reset_index(drop=True)
+        y = y.reset_index(drop=True)
+
+        mask_validi = y.notna()
+        X_base = X_base.loc[mask_validi].reset_index(drop=True)
+        y = y.loc[mask_validi].astype(int).reset_index(drop=True)
+
+        if max_rows is not None and len(X_base) > int(max_rows):
+            X_base, _, y, _ = train_test_split(
+                X_base,
+                y,
+                train_size=int(max_rows),
+                stratify=y,
+                random_state=random_state
+            )
+            X_base = X_base.reset_index(drop=True)
+            y = y.reset_index(drop=True)
+
+        risultati = []
+
+        for strategia in strategie:
+            if strategia == 'univariata_media':
+                X_imputato, _, report_imp = self.imputa_univariata_media(
+                    train_df=X_base,
+                    test_df=X_base,
+                    colonna=colonna
+                )
+            elif strategia == 'univariata_mediana':
+                X_imputato, _, report_imp = self.imputa_univariata_mediana(
+                    train_df=X_base,
+                    test_df=X_base,
+                    colonna=colonna
+                )
+            elif strategia == 'multivariata_regressione_lineare':
+                X_imputato, _, report_imp = self.imputa_multivariata_regressione_lineare(
+                    train_df=X_base,
+                    test_df=X_base,
+                    colonna=colonna
+                )
+            elif strategia == 'knn_predictor':
+                X_imputato, _, report_imp = self.imputa_knn_predictor(
+                    train_df=X_base,
+                    test_df=X_base,
+                    colonna=colonna,
+                    n_neighbors=n_neighbors_valutazione
+                )
+            else:
+                raise ValueError(f"Strategia non supportata: {strategia}")
+
+            X_model = X_imputato.drop(columns=['building_id'], errors='ignore')
+            X_model = pd.get_dummies(X_model, dummy_na=True)
+
+            X_train, X_val, y_train, y_val = train_test_split(
+                X_model,
+                y,
+                test_size=test_size,
+                stratify=y,
+                random_state=random_state
+            )
+
+            scaler = StandardScaler(with_mean=False)
+            X_train_scaled = scaler.fit_transform(X_train)
+            X_val_scaled = scaler.transform(X_val)
+
+            n_neighbors_eff = max(1, min(int(n_neighbors_valutazione), len(X_train)))
+
+            knn_clf = KNeighborsClassifier(
+                n_neighbors=n_neighbors_eff,
+                weights='distance',
+                algorithm='brute',
+                n_jobs=-1
+            )
+            knn_clf.fit(X_train_scaled, y_train)
+
+            y_pred = knn_clf.predict(X_val_scaled)
+            accuracy = float(accuracy_score(y_val, y_pred))
+
+            risultati.append({
+                'strategia': strategia,
+                'accuracy': round(accuracy, 6),
+                'n_righe_valutate': int(len(X_model)),
+                'n_features_model': int(X_model.shape[1]),
+                'n_missing_train_dopo': int(report_imp['n_missing_train_dopo'])
+            })
+
+        risultati_df = pd.DataFrame(risultati).sort_values('accuracy', ascending=False).reset_index(drop=True)
+
+        return risultati_df
+
+
 

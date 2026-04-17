@@ -2,6 +2,9 @@
 Script principale per il preprocessing dati - Terremoto Nepal 2015
 """
 
+import io
+from contextlib import redirect_stdout
+
 import pandas as pd
 from DataPreprocessing.puliziaASCII import PuliziaASCII, COLONNE_CATEGORICHE
 from DataPreprocessing.missingValues import MissingValuesHandler
@@ -9,9 +12,69 @@ from DataPreprocessing.data_cleaning import DataQualityHandler
 from DataPreprocessing.validation import DataValidator
 
 
-def format_number(n):
-    """Formatta numero con separatore migliaia."""
-    return f"{n:,}".replace(",", ".")
+def menu_strategia_imputazione_age():
+    """
+    Mostra un menu semplice per scegliere la strategia di imputazione di age.
+    Default: valuta tutte le strategie con KNN veloce e usa la migliore.
+    """
+    print("\n" + "=" * 80)
+    print("MENU IMPUTAZIONE AGE")
+    print("=" * 80)
+    print("1) Univariata - Media")
+    print("2) Univariata - Mediana")
+    print("3) Multivariata - Regressione lineare")
+    print("4) KNN predictor")
+    print("5) Valuta tutte con KNN veloce (accuracy) e scegli la migliore")
+
+    try:
+        scelta = input("Seleziona opzione [1-5] (default=5): ").strip()
+    except EOFError:
+        scelta = ""
+
+    if scelta not in {"1", "2", "3", "4", "5"}:
+        scelta = "5"
+
+    return scelta
+
+
+def applica_strategia_imputazione_age(missing_handler, train_values, test_values, scelta):
+    """Applica la strategia selezionata e ritorna train/test imputati + report."""
+    if scelta == "1":
+        return missing_handler.imputa_univariata_media(
+            train_df=train_values,
+            test_df=test_values,
+            colonna="age",
+        )
+
+    if scelta == "2":
+        return missing_handler.imputa_univariata_mediana(
+            train_df=train_values,
+            test_df=test_values,
+            colonna="age",
+        )
+
+    if scelta == "3":
+        return missing_handler.imputa_multivariata_regressione_lineare(
+            train_df=train_values,
+            test_df=test_values,
+            colonna="age",
+        )
+
+    if scelta == "4":
+        return missing_handler.imputa_knn_predictor(
+            train_df=train_values,
+            test_df=test_values,
+            colonna="age",
+            n_neighbors=5,
+        )
+
+    raise ValueError(f"Scelta strategia non valida: {scelta}")
+
+
+def esegui_silenzioso(funzione, *args, **kwargs):
+    """Esegue una funzione sopprimendo le stampe su stdout."""
+    with redirect_stdout(io.StringIO()):
+        return funzione(*args, **kwargs)
 
 
 def main():
@@ -79,7 +142,7 @@ def main():
     print(test_quality_report["outliers"])
 
     # =======================
-    # IMPUTAZIONE AGE: MULTIVARIATA
+    # IMPUTAZIONE AGE: MENU STRATEGIE
     # =======================
     missing_handler = MissingValuesHandler(null_threshold=70)
     train_values, _, n_sost_train = missing_handler.sostituisci_range_con_nan(
@@ -95,18 +158,51 @@ def main():
         max_val=995,
     )
 
-    train_values, test_values, age_imputation_report = missing_handler.imputa_mediana_multivariata(
-        train_df=train_values,
-        test_df=test_values,
-        colonna="age",
+    scelta_imputazione = menu_strategia_imputazione_age()
+    risultati_knn = None
+    solo_log_imputazione = True
+
+    if scelta_imputazione == "5":
+        risultati_knn = missing_handler.valuta_strategie_con_knn_veloce(
+            train_df=train_values,
+            train_labels=train_labels,
+            colonna="age",
+            target_col="damage_grade",
+            max_rows=20000,
+            n_neighbors_valutazione=5,
+        )
+
+        print("\n" + "=" * 80)
+        print("VALUTAZIONE STRATEGIE CON KNN VELOCE")
+        print("=" * 80)
+        print(risultati_knn.to_string(index=False))
+
+        strategia_migliore = risultati_knn.iloc[0]["strategia"]
+        print(f"\nStrategia migliore per accuracy KNN: {strategia_migliore}")
+
+        mappa_scelta = {
+            "univariata_media": "1",
+            "univariata_mediana": "2",
+            "multivariata_regressione_lineare": "3",
+            "knn_predictor": "4",
+        }
+        scelta_imputazione = mappa_scelta[strategia_migliore]
+
+    train_values, test_values, age_imputation_report = applica_strategia_imputazione_age(
+        missing_handler=missing_handler,
+        train_values=train_values,
+        test_values=test_values,
+        scelta=scelta_imputazione,
     )
 
     age_imputation_report["range_sostituito"] = [250, 995]
     age_imputation_report["n_valori_sostituiti_train"] = n_sost_train
     age_imputation_report["n_valori_sostituiti_test"] = n_sost_test
+    if risultati_knn is not None:
+        age_imputation_report["valutazione_knn_veloce"] = risultati_knn.to_dict(orient="records")
 
     print("\n" + "=" * 80)
-    print("IMPUTAZIONE AGE MULTIVARIATA")
+    print(f"IMPUTAZIONE AGE - {age_imputation_report['strategia'].upper()}")
     print("=" * 80)
     print(f"Valori in [250, 995] sostituiti con NaN - train: {n_sost_train}, test: {n_sost_test}")
     print(
@@ -119,56 +215,82 @@ def main():
     )
 
     # =======================
+    # VALIDAZIONE TRAIN/TEST (PRIMA DEL ONE-HOT)
+    # =======================
+    validator_train = DataValidator(train_values)
+    if solo_log_imputazione:
+        validation_report_train = esegui_silenzioso(validator_train.esegui_validazione, verbose=True)
+    else:
+        validation_report_train = validator_train.esegui_validazione(verbose=True)
+
+    validator_test = DataValidator(test_values)
+    if solo_log_imputazione:
+        validation_report_test = esegui_silenzioso(validator_test.esegui_validazione, verbose=True)
+    else:
+        validation_report_test = validator_test.esegui_validazione(verbose=True)
+
+    # =======================
     # STANDARDIZZAZIONE TRAIN
     # =======================
     train_quality_handler.data = train_values
-    scaler = train_quality_handler.fit_standardizzazione()
-    train_values = train_quality_handler.applica_standardizzazione(scaler)
+    if solo_log_imputazione:
+        scaler = esegui_silenzioso(train_quality_handler.fit_standardizzazione)
+        train_values = esegui_silenzioso(train_quality_handler.applica_standardizzazione, scaler)
+    else:
+        scaler = train_quality_handler.fit_standardizzazione()
+        train_values = train_quality_handler.applica_standardizzazione(scaler)
 
-    print("\n" + "=" * 80)
-    print("VERIFICA STANDARDIZZAZIONE TRAIN")
-    print("=" * 80)
-    cols_to_check = ["count_floors_pre_eq", "age", "area_percentage", "height_percentage", "count_families"]
-    print(train_values[cols_to_check].agg(["min", "max"]))
+        print("\n" + "=" * 80)
+        print("VERIFICA STANDARDIZZAZIONE TRAIN")
+        print("=" * 80)
+        cols_to_check = ["count_floors_pre_eq", "age", "area_percentage", "height_percentage", "count_families"]
+        print(train_values[cols_to_check].agg(["min", "max"]))
 
     # =======================
     # STANDARDIZZAZIONE TEST
     # =======================
     test_quality_handler.data = test_values
-    test_values = test_quality_handler.applica_standardizzazione(scaler)
+    if solo_log_imputazione:
+        test_values = esegui_silenzioso(test_quality_handler.applica_standardizzazione, scaler)
+    else:
+        test_values = test_quality_handler.applica_standardizzazione(scaler)
 
-    print("\n" + "=" * 80)
-    print("VERIFICA STANDARDIZZAZIONE TEST")
-    print("=" * 80)
-    print(test_values[cols_to_check].agg(["min", "max"]))
+        print("\n" + "=" * 80)
+        print("VERIFICA STANDARDIZZAZIONE TEST")
+        print("=" * 80)
+        print(test_values[cols_to_check].agg(["min", "max"]))
 
     # =======================
     # ONE-HOT ENCODING
     # =======================
-    print("\n" + "=" * 80)
-    print("ONE-HOT ENCODING (TRAIN & TEST)")
-    print("=" * 80)
+    if not solo_log_imputazione:
+        print("\n" + "=" * 80)
+        print("ONE-HOT ENCODING (TRAIN & TEST)")
+        print("=" * 80)
 
     # 1. Fit ed applicazione sul TRAIN (Impara le regole e trasforma)
     train_quality_handler.data = train_values
-    ohe_encoder = train_quality_handler.fit_one_hot_encoding(COLONNE_CATEGORICHE)
-    train_values = train_quality_handler.applica_one_hot_encoding(ohe_encoder, COLONNE_CATEGORICHE)
+    if solo_log_imputazione:
+        ohe_encoder = esegui_silenzioso(train_quality_handler.fit_one_hot_encoding, COLONNE_CATEGORICHE)
+        train_values = esegui_silenzioso(
+            train_quality_handler.applica_one_hot_encoding,
+            ohe_encoder,
+            COLONNE_CATEGORICHE,
+        )
+    else:
+        ohe_encoder = train_quality_handler.fit_one_hot_encoding(COLONNE_CATEGORICHE)
+        train_values = train_quality_handler.applica_one_hot_encoding(ohe_encoder, COLONNE_CATEGORICHE)
 
     # 2. Applicazione sul TEST (Usa le regole imparate dal train)
     test_quality_handler.data = test_values
-    test_values = test_quality_handler.applica_one_hot_encoding(ohe_encoder, COLONNE_CATEGORICHE)
-
-    # =======================
-    # VALIDAZIONE TRAIN
-    # =======================
-    validator_train = DataValidator(train_values)
-    validation_report_train = validator_train.esegui_validazione(verbose=True)
-
-    # =======================
-    # VALIDAZIONE TEST
-    # =======================
-    validator_test = DataValidator(test_values)
-    validation_report_test = validator_test.esegui_validazione(verbose=True)
+    if solo_log_imputazione:
+        test_values = esegui_silenzioso(
+            test_quality_handler.applica_one_hot_encoding,
+            ohe_encoder,
+            COLONNE_CATEGORICHE,
+        )
+    else:
+        test_values = test_quality_handler.applica_one_hot_encoding(ohe_encoder, COLONNE_CATEGORICHE)
 
     # =======================
     # MERGE TRAIN + LABELS
@@ -179,12 +301,23 @@ def main():
     # MISSING VALUES
     # =======================
     handler = MissingValuesHandler(null_threshold=70)
-    report = handler.analizza(df_merged, target_col="damage_grade")
-    report["age_imputation_multivariata"] = age_imputation_report
+    if solo_log_imputazione:
+        report = esegui_silenzioso(handler.analizza, df_merged, target_col="damage_grade")
+    else:
+        report = handler.analizza(df_merged, target_col="damage_grade")
+    report["age_imputation"] = age_imputation_report
+
+    best_accuracy_knn = None
+    if risultati_knn is not None and not risultati_knn.empty:
+        best_accuracy_knn = float(risultati_knn.iloc[0]["accuracy"])
 
     print("\n" + "=" * 80)
     print("✅  PREPROCESSING COMPLETATO")
     print("=" * 80)
+    print("FINITO PREPROCESSING: scelta dei metodi di imputazione con menu completata.")
+    print(f"Metodo imputazione selezionato: {age_imputation_report['strategia']}")
+    if best_accuracy_knn is not None:
+        print(f"Migliore accuracy KNN veloce: {best_accuracy_knn:.6f}")
 
     return (
         train_values,

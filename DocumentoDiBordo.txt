@@ -247,3 +247,46 @@ Questo è il problema opposto. Immagina che nel Test Set ci sia una casa con una
 
 3. Previene il Data Leakage in modo naturale
 Come discusso in precedenza, get_dummies() ti costringe a unire Train e Test prima di encodare (per evitare i problemi descritti ai punti 1 e 2). Ma unire i dataset è una pratica tecnicamente considerata Data Leakage (fuga di dati), perché stai guardando il test set prima del tempo. OneHotEncoder rispetta la regola d'oro del Machine Learning: impari le regole dal Train (fit), e le applichi ciecamente al Test (transform).
+
+
+================================================================================
+Luca - 17/04/2026
+================================================================================
+
+INTEGRAZIONE PIPELINE IMPUTAZIONE AGE CON MENU
+- Aggiornata la pipeline in main.py con menu di scelta metodo imputazione age:
+        1) Univariata media
+        2) Univariata mediana
+        3) Multivariata con regressione lineare
+        4) KNN predictor
+        5) Valutazione automatica con KNN veloce e scelta del metodo migliore
+- Mantenuta la regola di pulizia: valori age in [250, 995] convertiti in NaN prima dell'imputazione.
+- Salvato report di imputazione nel report finale con chiave age_imputation.
+
+Funzioni implementate in DataPreprocessing/missingValues.py:
+- imputa_univariata_media(...)
+- imputa_univariata_mediana(...)
+- imputa_multivariata_regressione_lineare(...)
+- imputa_knn_predictor(...)
+- valuta_strategie_con_knn_veloce(...)
+
+Criterio di valutazione KNN veloce:
+- Split holdout stratificato 80/20 sul train.
+- Campionamento massimo per velocita: 20.000 righe (parametro max_rows).
+- Preprocessing per la valutazione: rimozione building_id, one-hot encoding con get_dummies,
+    standardizzazione con StandardScaler (with_mean=False).
+- Classificatore di confronto: KNeighborsClassifier
+    (n_neighbors=5, weights='distance', algorithm='brute', n_jobs=-1).
+- Metrica usata per confronto rapido: accuracy.
+
+Risultati run (opzione menu 5):
+- univariata_media: accuracy = 0.57850
+- knn_predictor: accuracy = 0.57850
+- univariata_mediana: accuracy = 0.57825
+- multivariata_regressione_lineare: accuracy = 0.57825
+
+Decisione operativa:
+- Con opzione 5, la pipeline seleziona automaticamente la strategia con accuracy migliore.
+- Nel run validato e stata selezionata univariata_media
+    (pari merito con knn_predictor, prima in ordinamento tabellare).
+
