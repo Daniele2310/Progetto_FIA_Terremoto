@@ -40,3 +40,5 @@ Thumbs.db
 
 # Specifico del progetto
 *.csv.bak
+DataPreprocessed/*
+!DataPreprocessed/.gitkeep
