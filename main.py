@@ -4,6 +4,7 @@ Script principale per il preprocessing dati - Terremoto Nepal 2015
 
 import io
 from contextlib import redirect_stdout
+from pathlib import Path
 
 import pandas as pd
 from DataPreprocessing.puliziaASCII import PuliziaASCII, COLONNE_CATEGORICHE
@@ -75,6 +76,28 @@ def esegui_silenzioso(funzione, *args, **kwargs):
     """Esegue una funzione sopprimendo le stampe su stdout."""
     with redirect_stdout(io.StringIO()):
         return funzione(*args, **kwargs)
+
+
+def salva_dataset_preprocessati(train_values, train_labels, test_values, output_dir="DataPreprocessed"):
+    """Crea la cartella di output e salva i dataset preprocessati in formato CSV."""
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    file_train = output_path / "train_values_preprocessed.csv"
+    file_test = output_path / "test_values_preprocessed.csv"
+    file_train_con_label = output_path / "train_features_labels_preprocessed.csv"
+
+    train_values.to_csv(file_train, index=False)
+    test_values.to_csv(file_test, index=False)
+    pd.merge(train_values, train_labels, on="building_id").to_csv(file_train_con_label, index=False)
+
+    print("\n" + "=" * 80)
+    print("SALVATAGGIO DATASET PREPROCESSATI")
+    print("=" * 80)
+    print(f"File salvati in: {output_path.resolve()}")
+    print(f"- {file_train.name}")
+    print(f"- {file_test.name}")
+    print(f"- {file_train_con_label.name}")
 
 
 def main():
@@ -318,6 +341,8 @@ def main():
     print(f"Metodo imputazione selezionato: {age_imputation_report['strategia']}")
     if best_accuracy_knn is not None:
         print(f"Migliore accuracy KNN veloce: {best_accuracy_knn:.6f}")
+
+    salva_dataset_preprocessati(train_values, train_labels, test_values)
 
     return (
         train_values,
