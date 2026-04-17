@@ -227,3 +227,23 @@ Conclusione:
 - La multivariata e risultata lievemente migliore su F1 macro
     (+0.0006) e balanced accuracy (+0.0004), quindi e stata scelta come
     strategia finale.
+
+
+
+=========================================================
+ONE-HOT ENCODING
+
+1. Garantisce lo stesso numero di colonne (Allineamento Train/Test)
+Immagina che la variabile foundation_type abbia 5 categorie nel tuo Training Set (A, B, C, D, E), ma per puro caso nel Test Set non ci sia nessuna casa con la fondazione "E":
+
+- Se usi get_dummies() separatamente: Il train avrà 5 nuove colonne, ma il test ne avrà solo 4. Quando passerai il test set al modello per fare le predizioni, il modello andrà in crash restituendo un errore del tipo: "Mi aspettavo 100 colonne, ma me ne hai passate 99".
+- Se usi OneHotEncoder: L'encoder ha imparato dal train che le colonne devono essere 5. Quando trasforma il test set, creerà comunque la colonna per la fondazione "E" riempiendola di zeri. Il modello non andrà in crash.
+
+2. Gestisce le categorie mai viste prima (handle_unknown='ignore')
+Questo è il problema opposto. Immagina che nel Test Set ci sia una casa con una foundation_type = 'Z', che non era mai apparsa nel Training Set:
+
+- Se usi get_dummies(): Creerà una nuova colonna foundation_type_Z nel test set. Il modello, non avendo mai visto questa colonna durante l'addestramento, andrà in crash.
+- Se usi OneHotEncoder: Grazie al parametro handle_unknown='ignore' che abbiamo impostato, l'encoder sa esattamente cosa fare: ignora la categoria 'Z' sconosciuta e mette semplicemente 0 in tutte le colonne delle fondazioni per quella riga. Nessun crash, predizione salvata.
+
+3. Previene il Data Leakage in modo naturale
+Come discusso in precedenza, get_dummies() ti costringe a unire Train e Test prima di encodare (per evitare i problemi descritti ai punti 1 e 2). Ma unire i dataset è una pratica tecnicamente considerata Data Leakage (fuga di dati), perché stai guardando il test set prima del tempo. OneHotEncoder rispetta la regola d'oro del Machine Learning: impari le regole dal Train (fit), e le applichi ciecamente al Test (transform).
