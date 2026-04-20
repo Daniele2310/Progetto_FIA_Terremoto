@@ -11,6 +11,8 @@ from DataPreprocessing.puliziaASCII import PuliziaASCII, COLONNE_CATEGORICHE
 from DataPreprocessing.missingValues import MissingValuesHandler
 from DataPreprocessing.data_cleaning import DataQualityHandler
 from DataPreprocessing.validation import DataValidator
+from PCA import PCAHandler
+
 
 
 def menu_strategia_imputazione_age():
@@ -314,6 +316,45 @@ def main():
         )
     else:
         test_values = test_quality_handler.applica_one_hot_encoding(ohe_encoder, COLONNE_CATEGORICHE)
+
+    # =======================
+    # PCA
+    # =======================
+    if train_values.isnull().sum().sum() > 0 or test_values.isnull().sum().sum() > 0:
+        raise ValueError("Sono presenti valori NaN: completa imputazione/pulizia prima di applicare PCA.")
+
+    pca_handler = PCAHandler()
+
+    n_componenti = pca_handler.refit_with_threshold(
+        train_df=train_values,
+        threshold=0.95,
+        exclude_columns=["building_id"],
+    )
+
+    train_values = pca_handler.transform(
+        train_values,
+        preserve_columns=["building_id"],
+    )
+
+    test_values = pca_handler.transform(
+        test_values,
+        preserve_columns=["building_id"],
+    )
+
+    pca_report = pca_handler.build_report(threshold=0.95)
+
+    print("\n" + "=" * 80)
+    print("PCA COMPLETATA")
+    print("=" * 80)
+    print(f"Numero componenti selezionate: {n_componenti}")
+    print(
+        f"Varianza cumulativa spiegata: "
+        f"{list(pca_report['cumulative_explained_variance'].values())[-1]:.4f}"
+    )
+    print(f"Nuove dimensioni train: {train_values.shape}")
+    print(f"Nuove dimensioni test: {test_values.shape}")
+    report["pca"] = pca_report
+
 
     # =======================
     # MERGE TRAIN + LABELS
