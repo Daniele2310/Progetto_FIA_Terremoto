@@ -403,3 +403,72 @@ Conclusioni:
     risultano quasi non informative se considerate singolarmente con IG.
 - Il ranking IG e coerente con un utilizzo supervisionato per selezione feature discreta.
 
+
+================================================================================
+Luca - 21/04/2026 (notte)
+================================================================================
+
+REPORT BREVE - FEATURE RANKING SIMULTANEO CON RELIEF
+
+Definizione operativa usata:
+- Per ogni campione x sono ricercati near hit (stessa classe) e near miss (classe diversa).
+- Aggiornamento pesi per feature i:
+    W_i = W_i - (x_i - near_hit_i)^2 + (x_i - near_miss_i)^2
+- Una feature e rilevante se tende a restare simile tra campioni della stessa classe
+    e a differire tra campioni di classi diverse.
+
+Sorgente risultati:
+- Feature Selection/Simultaneous/outputs/relief_ranking.csv
+- Feature Selection/Simultaneous/outputs/relief_summary.csv
+- Feature Selection/Simultaneous/outputs/relief_top_features.csv
+- Feature Selection/Simultaneous/outputs/relief_top_features.png
+
+Impostazione run:
+- Dataset: Data/train_values.csv + Data/train_labels.csv
+- Target: damage_grade
+- One-hot encoding automatico sulle feature categoriche
+- Feature finali dopo encoding: 68
+- Campioni: 260601
+- Iterazioni Relief richieste: 5000
+- Aggiornamenti validi: 4969
+- Ricerca vicini: 50 neighbor per campione
+
+Feature piu rilevanti (top 10, peso Relief positivo):
+- geo_level_3_id: 0.003802
+- geo_level_2_id: 0.003618
+- has_superstructure_cement_mortar_stone: 0.002616
+- geo_level_1_id: 0.002424
+- has_superstructure_rc_non_engineered: 0.002415
+- has_superstructure_adobe_mud: 0.001610
+- has_superstructure_stone_flag: 0.001610
+- position_s: 0.001610
+- land_surface_condition_o: 0.001409
+- land_surface_condition_t: 0.001409
+
+Feature meno favorevoli (pesi piu negativi):
+- plan_configuration_d: -0.001811
+- has_superstructure_timber: -0.001207
+- roof_type_n: -0.001006
+- has_secondary_use: -0.000805
+- roof_type_x: -0.000805
+
+Osservazioni:
+- Le componenti geografiche (geo_level_1_id, geo_level_2_id, geo_level_3_id) risultano
+    tra le piu informative anche in Relief, in linea con i risultati di Information Gain.
+- Diversi indicatori strutturali/materiali mostrano peso positivo, suggerendo buona
+    capacita discriminante locale rispetto al target damage_grade.
+- Alcune feature one-hot hanno peso prossimo a zero: possono essere poco informative
+    singolarmente oppure ridondanti con altre feature correlate.
+
+Conclusioni:
+- Il ranking Relief conferma che geografia e caratteristiche costruttive sono centrali
+    nella separazione delle classi di danno.
+- Relief e computazionalmente oneroso (ricerca dei vicini), ma fornisce una misura
+    supervisionata locale complementare a correlazione e Information Gain.
+- Nota su costo computazionale:
+    con dataset grandi (qui 260601 campioni) il collo di bottiglia e la ricerca
+    dei nearest neighbors; in alta dimensionalita il costo puo crescere molto,
+    fino a comportamenti vicini al quadratico nel numero di campioni.
+    Per ridurre i tempi operativi conviene usare campionamento, riduzione delle
+    feature, meno vicini cercati o metodi approssimati per i neighbors.
+
