@@ -353,7 +353,7 @@ def main():
     )
     print(f"Nuove dimensioni train: {train_values.shape}")
     print(f"Nuove dimensioni test: {test_values.shape}")
-    report["pca"] = pca_report
+    
 
 
     # =======================
@@ -370,6 +370,7 @@ def main():
     else:
         report = handler.analizza(df_merged, target_col="damage_grade")
     report["age_imputation"] = age_imputation_report
+    report["pca"] = pca_report
 
     best_accuracy_knn = None
     if risultati_knn is not None and not risultati_knn.empty:
