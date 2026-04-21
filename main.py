@@ -2,6 +2,7 @@
 Script principale per il preprocessing dati - Terremoto Nepal 2015
 """
 
+import importlib.util
 import io
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -11,7 +12,34 @@ from DataPreprocessing.puliziaASCII import PuliziaASCII, COLONNE_CATEGORICHE
 from DataPreprocessing.missingValues import MissingValuesHandler
 from DataPreprocessing.data_cleaning import DataQualityHandler
 from DataPreprocessing.validation import DataValidator
-from PCA import PCAHandler
+
+
+def carica_pca_handler():
+    """Carica PCAHandler dal modulo in Feature Selection/Simultaneous/PCA.py."""
+    module_path = (
+        Path(__file__).resolve().parent
+        / "Feature Selection"
+        / "Simultaneous"
+        / "PCA.py"
+    )
+
+    if not module_path.exists():
+        raise FileNotFoundError(f"Modulo PCA non trovato: {module_path}")
+
+    spec = importlib.util.spec_from_file_location("feature_selection_simultaneous_pca", module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Impossibile caricare il modulo PCA da: {module_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    if not hasattr(module, "PCAHandler"):
+        raise ImportError("Classe 'PCAHandler' non trovata nel modulo PCA.")
+
+    return module.PCAHandler
+
+
+PCAHandler = carica_pca_handler()
 
 def menu_strategia_imputazione_age():
     """

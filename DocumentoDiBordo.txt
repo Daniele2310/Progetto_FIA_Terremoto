@@ -290,3 +290,66 @@ Decisione operativa:
 - Nel run validato e stata selezionata univariata_media
     (pari merito con knn_predictor, prima in ordinamento tabellare).
 
+
+================================================================================
+Luca - 21/04/2026
+================================================================================
+
+REPORT BREVE - FEATURE RANKING PAIR-WISE (PEARSON, SENZA PCA)
+
+Sorgente risultati:
+- Feature Selection/Feature Ranking/outputs/pairwise_ranking.csv
+- Feature Selection/Feature Ranking/outputs/top_pairwise_correlated_pairs.csv
+- Feature Selection/Feature Ranking/outputs/supervised_ranking.csv
+
+Nota sul preprocessing per questa analisi:
+- Analisi eseguita su feature originali (train_values + train_labels), senza componenti PCA.
+- Applicato one-hot encoding alle variabili categoriche prima del calcolo della correlazione.
+
+1) Correlazione tra feature (pair-wise)
+
+Coppie piu correlate (top 5, per |corr|):
+- land_surface_condition_n - land_surface_condition_t: 0.883395 (negativa)
+- roof_type_n - roof_type_q: 0.852932 (negativa)
+- position_s - position_t: 0.824950 (negativa)
+- count_floors_pre_eq - height_percentage: 0.772734 (positiva)
+- legal_ownership_status_a - legal_ownership_status_v: 0.749134 (negativa)
+
+Feature mediamente piu correlate con le altre (mean |corr|):
+- ground_floor_type_v: 0.134927
+- roof_type_x: 0.134344
+- foundation_type_r: 0.130225
+- has_superstructure_mud_mortar_stone: 0.128161
+- other_floor_type_s: 0.123284
+
+Feature mediamente piu scorrelate con le altre (mean |corr| piu basso):
+- has_secondary_use_gov_office: 0.005421
+- has_secondary_use_health_post: 0.004944
+- has_secondary_use_use_police: 0.002939
+- plan_configuration_n: 0.002345
+- plan_configuration_f: 0.001888
+
+2) Correlazione con il target (damage_grade)
+
+Feature piu correlate con il target (|corr_with_label|):
+- foundation_type_r: 0.343355
+- ground_floor_type_v: 0.318720
+- has_superstructure_mud_mortar_stone: 0.291325
+- roof_type_x: 0.280106
+- foundation_type_i: 0.263901
+
+Feature piu scorrelate con il target (|corr_with_label| piu basso):
+- position_o: 0.004787
+- legal_ownership_status_r: 0.002591
+- has_secondary_use_use_police: 0.001656
+- plan_configuration_n: 0.001587
+- plan_configuration_f: 0.000517
+
+Conclusioni:
+- Le correlazioni piu alte tra feature derivano in parte da variabili categoriche one-hot
+    mutuamente esclusive (correlazioni negative forti tra categorie della stessa variabile).
+- Le feature strutturali/materiali (es. foundation_type_r, ground_floor_type_v,
+    has_superstructure_mud_mortar_stone, roof_type_x) mostrano relazione piu forte con damage_grade.
+- Le feature con correlazione molto bassa col target (es. plan_configuration_f,
+    plan_configuration_n, has_secondary_use_use_police) appaiono meno informative singolarmente.
+
