@@ -16,7 +16,7 @@ class PCAHandler:
 
     def _check_fitted(self) -> None:
         if not self.fitted_:
-            raise ValueError("Il PCAHandler non è stato ancora addestrato.")
+            raise ValueError("Il PCAHandler non e stato ancora addestrato.")
 
     @staticmethod
     def _normalize_columns_arg(columns: Optional[Iterable[str]]) -> list[str]:
@@ -24,19 +24,32 @@ class PCAHandler:
             return []
         return list(columns)
 
-    def fit(self, df: pd.DataFrame, exclude_columns: Optional[Iterable[str]] = None):
-        exclude_columns = self._normalize_columns_arg(exclude_columns)
+    @staticmethod
+    def _validate_threshold(threshold: float) -> float:
+        if not (0 < threshold <= 1):
+            raise ValueError("threshold deve stare in (0,1]")
+        return threshold
 
-        self.feature_columns_ = [col for col in df.columns if col not in exclude_columns]
-
-        if not self.feature_columns_:
+    @staticmethod
+    def _prepare_matrix(df: pd.DataFrame, feature_columns: list[str]) -> pd.DataFrame:
+        if not feature_columns:
             raise ValueError("Nessuna feature disponibile per il PCA.")
 
-        X = df[self.feature_columns_]
+        X = df[feature_columns]
 
         if not all(np.issubdtype(dtype, np.number) for dtype in X.dtypes):
             raise ValueError("Il PCA richiede input numerico.")
 
+        if X.isnull().any().any():
+            raise ValueError("Il PCA richiede input senza valori NaN.")
+
+        return X
+
+    def fit(self, df: pd.DataFrame, exclude_columns: Optional[Iterable[str]] = None):
+        exclude_columns = self._normalize_columns_arg(exclude_columns)
+        self.feature_columns_ = [col for col in df.columns if col not in exclude_columns]
+
+        X = self._prepare_matrix(df, self.feature_columns_)
         self.pca.fit(X)
         self.fitted_ = True
         return self
@@ -49,7 +62,11 @@ class PCAHandler:
         if missing_cols:
             raise ValueError(f"Colonne mancanti: {missing_cols}")
 
-        X = df[self.feature_columns_]
+        missing_preserve_cols = [col for col in preserve_columns if col not in df.columns]
+        if missing_preserve_cols:
+            raise ValueError(f"Colonne da preservare mancanti: {missing_preserve_cols}")
+
+        X = self._prepare_matrix(df, self.feature_columns_)
         X_pca = self.pca.transform(X)
 
         pca_columns = [f"PC{i+1}" for i in range(X_pca.shape[1])]
@@ -81,9 +98,7 @@ class PCAHandler:
 
     def choose_n_components(self, threshold: float = 0.95) -> int:
         self._check_fitted()
-
-        if not (0 < threshold <= 1):
-            raise ValueError("threshold deve stare in (0,1]")
+        threshold = self._validate_threshold(threshold)
 
         cumulative = np.cumsum(self.pca.explained_variance_ratio_)
         return int(np.argmax(cumulative >= threshold) + 1)
@@ -97,18 +112,26 @@ class PCAHandler:
             columns=self.feature_columns_,
         )
 
-    def build_report(self, threshold: float = 0.95) -> dict:
+    def build_report(self, threshold: Optional[float] = None) -> dict:
         self._check_fitted()
 
         explained = self.explained_variance_ratio()
         cumulative = self.cumulative_explained_variance()
-        suggested = self.choose_n_components(threshold=threshold)
+
+        if threshold is not None:
+            threshold = self._validate_threshold(threshold)
+            suggested = self.choose_n_components(threshold=threshold)
+            threshold_value = float(threshold)
+            suggested_value = int(suggested)
+        else:
+            threshold_value = None
+            suggested_value = None
 
         return {
             "n_components_input": self.n_components,
             "n_components_calcolate": int(len(explained)),
-            "threshold": float(threshold),
-            "n_components_consigliate": int(suggested),
+            "threshold": threshold_value,
+            "n_components_consigliate": suggested_value,
             "explained_variance_ratio": explained.to_dict(),
             "cumulative_explained_variance": cumulative.to_dict(),
         }
@@ -116,7 +139,8 @@ class PCAHandler:
     def plot_scree(
         self,
         output_path: Optional[str | Path] = None,
-        threshold: float = 0.95,
+        threshold: Optional[float] = None,
+        selected_n: Optional[int] = None,
         show_plot: bool = True,
     ) -> None:
         self._check_fitted()
@@ -128,13 +152,27 @@ class PCAHandler:
         plt.figure(figsize=(10, 6))
         plt.plot(x, variance, marker="o", label="Varianza singola")
         plt.plot(x, cumulative, marker="o", label="Varianza cumulativa")
-        plt.axhline(y=threshold, linestyle="--", label=f"Soglia {threshold}")
+
+        if threshold is not None:
+            threshold = self._validate_threshold(threshold)
+            plt.axhline(y=threshold, linestyle="--", label=f"Soglia {threshold}")
+
+        if selected_n is not None:
+            if not (1 <= selected_n <= len(x)):
+                raise ValueError(f"selected_n deve stare tra 1 e {len(x)}.")
+            plt.axvline(
+                x=selected_n,
+                linestyle="--",
+                color="red",
+                label=f"Componenti scelte: {selected_n}",
+            )
 
         plt.xlabel("Componenti")
         plt.ylabel("Varianza")
         plt.title("Scree Plot")
         plt.legend()
         plt.grid()
+        plt.tight_layout()
 
         if output_path is not None:
             output_path = Path(output_path)
@@ -152,18 +190,15 @@ class PCAHandler:
         threshold: float = 0.95,
         exclude_columns: Optional[Iterable[str]] = None,
     ) -> int:
+        threshold = self._validate_threshold(threshold)
         exclude_columns = self._normalize_columns_arg(exclude_columns)
 
         full_pca = PCA()
         feature_columns = [col for col in train_df.columns if col not in exclude_columns]
-        X_train = train_df[feature_columns]
+        X_train = self._prepare_matrix(train_df, feature_columns)
         full_pca.fit(X_train)
 
         cumulative = np.cumsum(full_pca.explained_variance_ratio_)
-
-        if not (0 < threshold <= 1):
-            raise ValueError("threshold deve stare in (0,1]")
-
         selected_n = int(np.argmax(cumulative >= threshold) + 1)
 
         self.n_components = selected_n
@@ -171,3 +206,4 @@ class PCAHandler:
         self.fit(train_df, exclude_columns=exclude_columns)
 
         return selected_n
+
