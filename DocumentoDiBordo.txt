@@ -353,3 +353,53 @@ Conclusioni:
 - Le feature con correlazione molto bassa col target (es. plan_configuration_f,
     plan_configuration_n, has_secondary_use_use_police) appaiono meno informative singolarmente.
 
+
+================================================================================
+Luca - 21/04/2026 (sera)
+================================================================================
+
+REPORT BREVE - FEATURE RANKING BASATO SU INCERTEZZA (ENTROPIA / INFORMATION GAIN)
+
+Definizione usata:
+- H(Y) = - sum_k p(y_k) * log2(p(y_k))
+- IG(Y, X) = H(Y) - H(Y|X)
+- Metodo applicato solo a feature discrete.
+
+Sorgente risultati:
+- Feature Selection/Feature Ranking/outputs/uncertainty_information_gain_ranking.csv
+- Feature Selection/Feature Ranking/outputs/uncertainty_summary.json
+
+Impostazione run:
+- Dataset: Data/train_values.csv + Data/train_labels.csv
+- Target: damage_grade
+- Feature candidate: 38
+- Feature discrete usate: 38
+- Feature non discrete scartate: 0
+- Entropia globale target H(Y): 1.316793
+
+Feature piu informative (top 5 IG):
+- geo_level_3_id: 0.482037
+- geo_level_2_id: 0.346250
+- geo_level_1_id: 0.190259
+- foundation_type: 0.102432
+- ground_floor_type: 0.077276
+
+Feature meno informative (bottom 5 IG):
+- has_secondary_use_school: 0.000107
+- has_secondary_use_industry: 0.000101
+- has_secondary_use_gov_office: 0.000062
+- has_secondary_use_health_post: 0.000054
+- has_secondary_use_use_police: 0.000004
+
+Verifiche di correttezza eseguite:
+- Tutti gli IG sono non negativi (min IG > 0).
+- Tutti gli IG rispettano il vincolo IG <= H(Y).
+- Ricomputo indipendente della feature top (geo_level_3_id): differenza assoluta 0.0.
+
+Conclusioni:
+- Le variabili geografiche (soprattutto geo_level_3_id e geo_level_2_id) contengono la quota
+    piu alta di informazione utile per predire damage_grade.
+- Le feature di uso secondario (school, industry, gov_office, health_post, use_police)
+    risultano quasi non informative se considerate singolarmente con IG.
+- Il ranking IG e coerente con un utilizzo supervisionato per selezione feature discreta.
+
