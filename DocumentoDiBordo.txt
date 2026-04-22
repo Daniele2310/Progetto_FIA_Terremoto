@@ -298,9 +298,9 @@ Luca - 21/04/2026
 REPORT BREVE - FEATURE RANKING PAIR-WISE (PEARSON, SENZA PCA)
 
 Sorgente risultati:
-- Feature Selection/Feature Ranking/outputs/pairwise_ranking.csv
-- Feature Selection/Feature Ranking/outputs/top_pairwise_correlated_pairs.csv
-- Feature Selection/Feature Ranking/outputs/supervised_ranking.csv
+- Feature Selection/feature ranking/outputs/pairwise_ranking.csv
+- Feature Selection/feature ranking/outputs/top_pairwise_correlated_pairs.csv
+- Feature Selection/feature ranking/outputs/supervised_ranking.csv
 
 Nota sul preprocessing per questa analisi:
 - Analisi eseguita su feature originali (train_values + train_labels), senza componenti PCA.
@@ -366,8 +366,8 @@ Definizione usata:
 - Metodo applicato solo a feature discrete.
 
 Sorgente risultati:
-- Feature Selection/Feature Ranking/outputs/uncertainty_information_gain_ranking.csv
-- Feature Selection/Feature Ranking/outputs/uncertainty_summary.json
+- Feature Selection/feature ranking/outputs/uncertainty_information_gain_ranking.csv
+- Feature Selection/feature ranking/outputs/uncertainty_summary.json
 
 Impostazione run:
 - Dataset: Data/train_values.csv + Data/train_labels.csv
@@ -418,10 +418,10 @@ Definizione operativa usata:
     e a differire tra campioni di classi diverse.
 
 Sorgente risultati:
-- Feature Selection/Simultaneous/outputs/relief_ranking.csv
-- Feature Selection/Simultaneous/outputs/relief_summary.csv
-- Feature Selection/Simultaneous/outputs/relief_top_features.csv
-- Feature Selection/Simultaneous/outputs/relief_top_features.png
+- Feature Selection/feature ranking/outputs/relief_ranking.csv
+- Feature Selection/feature ranking/outputs/relief_summary.csv
+- Feature Selection/feature ranking/outputs/relief_top_features.csv
+- Feature Selection/feature ranking/outputs/relief_top_features.png
 
 Impostazione run:
 - Dataset: Data/train_values.csv + Data/train_labels.csv

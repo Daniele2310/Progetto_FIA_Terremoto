@@ -18,18 +18,18 @@ SHOW_DATA_QUALITY_PLOTS = False
 
 
 def carica_pca_handler():
-    """Carica PCAHandler dal modulo in Feature Selection/Simultaneous/PCA.py."""
+    """Carica PCAHandler dal modulo in Feature Selection/feature ranking/PCA.py."""
     module_path = (
         Path(__file__).resolve().parent
         / "Feature Selection"
-        / "Simultaneous"
+        / "feature ranking"
         / "PCA.py"
     )
 
     if not module_path.exists():
         raise FileNotFoundError(f"Modulo PCA non trovato: {module_path}")
 
-    spec = importlib.util.spec_from_file_location("feature_selection_simultaneous_pca", module_path)
+    spec = importlib.util.spec_from_file_location("feature_selection_feature_ranking_pca", module_path)
     if spec is None or spec.loader is None:
         raise ImportError(f"Impossibile caricare il modulo PCA da: {module_path}")
 
