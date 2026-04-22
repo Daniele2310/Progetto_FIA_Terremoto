@@ -22,7 +22,7 @@ def carica_pca_handler():
     module_path = (
         Path(__file__).resolve().parent
         / "Feature Selection"
-        / "feature ranking"
+        / "Feature ranking"
         / "PCA.py"
     )
 
@@ -412,7 +412,7 @@ def main():
             nome_valore = "Media" if col_report["strategia"] == "univariata_media" else "Mediana"
             print(
                 f"{nome_valore} usata per imputare '{col_report['colonna']}': "
-                f"{col_report['valore_imputazione_train']:.6f}"
+                f"{col_report['valore_imputazione_train']:.2f}"
             )
 
         if col_report["strategia"] == "multivariata_regressione_lineare":
@@ -428,6 +428,31 @@ def main():
             )
             print(
                 "Valori imputati TEST (regressione) - "
+                f"media: {fmt_val(col_report.get('test_media_imputata'))}, "
+                f"mediana: {fmt_val(col_report.get('test_mediana_imputata'))}, "
+                f"min: {fmt_val(col_report.get('test_min_imputato'))}, "
+                f"max: {fmt_val(col_report.get('test_max_imputato'))}"
+            )
+
+        if col_report["strategia"] == "knn_predictor":
+            def fmt_val(v):
+                return f"{v:.2f}" if v is not None else "n/a"
+
+            print(
+                "Strategia usata: KNN predictor - "
+                f"n_neighbors: {col_report.get('n_neighbors')}, "
+                f"n_feature_usate: {col_report.get('n_feature_usate')}"
+            )
+            print("Preprocessing interno: mediana solo sui predittori numerici.")
+            print(
+                "Valori imputati TRAIN (KNN) - valore finale predetto dai vicini: "
+                f"media: {fmt_val(col_report.get('train_media_imputata'))}, "
+                f"mediana: {fmt_val(col_report.get('train_mediana_imputata'))}, "
+                f"min: {fmt_val(col_report.get('train_min_imputato'))}, "
+                f"max: {fmt_val(col_report.get('train_max_imputato'))}"
+            )
+            print(
+                "Valori imputati TEST (KNN) - valore finale predetto dai vicini: "
                 f"media: {fmt_val(col_report.get('test_media_imputata'))}, "
                 f"mediana: {fmt_val(col_report.get('test_mediana_imputata'))}, "
                 f"min: {fmt_val(col_report.get('test_min_imputato'))}, "

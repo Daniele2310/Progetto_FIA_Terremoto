@@ -432,18 +432,31 @@ class MissingValuesHandler:
         n_missing_train_prima = int(train_out[colonna].isna().sum())
         n_missing_test_prima = int(test_out[colonna].isna().sum())
 
+        pred_train = np.array([])
         mask_missing_train = train_out[colonna].isna()
         if mask_missing_train.any():
-            pred_train = model.predict(X_train.loc[mask_missing_train])
-            train_out.loc[mask_missing_train, colonna] = np.clip(pred_train, a_min=0, a_max=None)
+            pred_train = np.clip(model.predict(X_train.loc[mask_missing_train]), a_min=0, a_max=None)
+            train_out.loc[mask_missing_train, colonna] = pred_train
 
+        pred_test = np.array([])
         mask_missing_test = test_out[colonna].isna()
         if mask_missing_test.any():
-            pred_test = model.predict(X_test.loc[mask_missing_test])
-            test_out.loc[mask_missing_test, colonna] = np.clip(pred_test, a_min=0, a_max=None)
+            pred_test = np.clip(model.predict(X_test.loc[mask_missing_test]), a_min=0, a_max=None)
+            test_out.loc[mask_missing_test, colonna] = pred_test
 
         n_missing_train_dopo = int(train_out[colonna].isna().sum())
         n_missing_test_dopo = int(test_out[colonna].isna().sum())
+
+        statistiche_imputazione = {
+            'train_media_imputata': float(np.mean(pred_train)) if pred_train.size else None,
+            'train_mediana_imputata': float(np.median(pred_train)) if pred_train.size else None,
+            'train_min_imputato': float(np.min(pred_train)) if pred_train.size else None,
+            'train_max_imputato': float(np.max(pred_train)) if pred_train.size else None,
+            'test_media_imputata': float(np.mean(pred_test)) if pred_test.size else None,
+            'test_mediana_imputata': float(np.median(pred_test)) if pred_test.size else None,
+            'test_min_imputato': float(np.min(pred_test)) if pred_test.size else None,
+            'test_max_imputato': float(np.max(pred_test)) if pred_test.size else None,
+        }
 
         report = {
             'strategia': 'knn_predictor',
@@ -454,7 +467,8 @@ class MissingValuesHandler:
             'n_missing_train_prima': n_missing_train_prima,
             'n_missing_train_dopo': n_missing_train_dopo,
             'n_missing_test_prima': n_missing_test_prima,
-            'n_missing_test_dopo': n_missing_test_dopo
+            'n_missing_test_dopo': n_missing_test_dopo,
+            **statistiche_imputazione
         }
 
         return train_out, test_out, report
