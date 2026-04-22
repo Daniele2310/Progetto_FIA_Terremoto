@@ -14,6 +14,9 @@ from DataPreprocessing.data_cleaning import DataQualityHandler
 from DataPreprocessing.validation import DataValidator
 
 
+SHOW_DATA_QUALITY_PLOTS = False
+
+
 def carica_pca_handler():
     """Carica PCAHandler dal modulo in Feature Selection/Simultaneous/PCA.py."""
     module_path = (
@@ -213,7 +216,7 @@ def main():
     # DATA QUALITY TRAIN
     # =======================
     train_quality_handler = DataQualityHandler(train_values)
-    train_quality_report = train_quality_handler.esegui_controlli(plot=True)
+    train_quality_report = train_quality_handler.esegui_controlli(plot=SHOW_DATA_QUALITY_PLOTS)
 
     # Aggiorno il dataframe con le modifiche effettuate nell'handler
     train_values = train_quality_handler.data
@@ -240,7 +243,7 @@ def main():
     # DATA QUALITY TEST
     # =======================
     test_quality_handler = DataQualityHandler(test_values)
-    test_quality_report = test_quality_handler.esegui_controlli(plot=True)
+    test_quality_report = test_quality_handler.esegui_controlli(plot=SHOW_DATA_QUALITY_PLOTS)
 
     # Aggiorno il dataframe con le modifiche effettuate nell'handler
     test_values = test_quality_handler.data
