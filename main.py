@@ -335,6 +335,12 @@ def main():
         f"Missing age test prima/dopo: "
         f"{age_imputation_report['n_missing_test_prima']} -> {age_imputation_report['n_missing_test_dopo']}"
     )
+    if age_imputation_report["strategia"] in {"univariata_media", "univariata_mediana"}:
+        nome_valore = "Media" if age_imputation_report["strategia"] == "univariata_media" else "Mediana"
+        print(
+            f"{nome_valore} usata per imputare '{age_imputation_report['colonna']}': "
+            f"{age_imputation_report['valore_imputazione_train']:.6f}"
+        )
 
     # =======================
     # VALIDAZIONE TRAIN/TEST (PRIMA DEL ONE-HOT)
