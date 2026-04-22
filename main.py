@@ -10,7 +10,7 @@ from pathlib import Path
 import pandas as pd
 from DataPreprocessing.puliziaASCII import PuliziaASCII, COLONNE_CATEGORICHE
 from DataPreprocessing.missingValues import MissingValuesHandler
-from DataPreprocessing.data_cleaning import DataQualityHandler
+from DataPreprocessing.data_cleaning import DataQualityHandler, COLONNE_CONTINUE
 from DataPreprocessing.validation import DataValidator
 
 
@@ -44,13 +44,14 @@ def carica_pca_handler():
 
 PCAHandler = carica_pca_handler()
 
-def menu_strategia_imputazione_age():
+def menu_strategia_imputazione_outlier_numerici():
     """
-    Mostra un menu semplice per scegliere la strategia di imputazione di age.
+    Mostra un menu semplice per scegliere la strategia di imputazione
+    delle feature numeriche con outlier sostituiti a NaN.
     Default: valuta tutte le strategie con KNN veloce e usa la migliore.
     """
     print("\n" + "=" * 80)
-    print("MENU IMPUTAZIONE AGE")
+    print("MENU IMPUTAZIONE FEATURE NUMERICHE OUTLIER")
     print("=" * 80)
     print("1) Univariata - Media")
     print("2) Univariata - Mediana")
@@ -137,38 +138,51 @@ def leggi_n_componenti_pca(max_componenti):
     return n_componenti
 
 
-def applica_strategia_imputazione_age(missing_handler, train_values, test_values, scelta):
-    """Applica la strategia selezionata e ritorna train/test imputati + report."""
+def applica_strategia_imputazione_colonna(missing_handler, train_values, test_values, scelta, colonna):
+    """Applica la strategia selezionata su una colonna e ritorna train/test imputati + report."""
     if scelta == "1":
         return missing_handler.imputa_univariata_media(
             train_df=train_values,
             test_df=test_values,
-            colonna="age",
+            colonna=colonna,
         )
 
     if scelta == "2":
         return missing_handler.imputa_univariata_mediana(
             train_df=train_values,
             test_df=test_values,
-            colonna="age",
+            colonna=colonna,
         )
 
     if scelta == "3":
         return missing_handler.imputa_multivariata_regressione_lineare(
             train_df=train_values,
             test_df=test_values,
-            colonna="age",
+            colonna=colonna,
         )
 
     if scelta == "4":
         return missing_handler.imputa_knn_predictor(
             train_df=train_values,
             test_df=test_values,
-            colonna="age",
+            colonna=colonna,
             n_neighbors=5,
         )
 
     raise ValueError(f"Scelta strategia non valida: {scelta}")
+
+
+def sostituisci_fuori_bound_con_nan(df, colonna, lower_bound, upper_bound):
+    """Sostituisce con NaN i valori fuori dai bound [lower_bound, upper_bound]."""
+    if colonna not in df.columns:
+        return df, 0
+
+    df_out = df.copy()
+    mask_outlier = (df_out[colonna] < lower_bound) | (df_out[colonna] > upper_bound)
+    n_sostituiti = int(mask_outlier.sum())
+    df_out.loc[mask_outlier, colonna] = pd.NA
+
+    return df_out, n_sostituiti
 
 
 def esegui_silenzioso(funzione, *args, **kwargs):
@@ -264,43 +278,94 @@ def main():
     print(test_quality_report["outliers"])
 
     # =======================
-    # IMPUTAZIONE AGE: MENU STRATEGIE
+    # IMPUTAZIONE FEATURE NUMERICHE CON OUTLIER
     # =======================
     missing_handler = MissingValuesHandler(null_threshold=70)
-    train_values, _, n_sost_train = missing_handler.sostituisci_range_con_nan(
-        train_values,
-        colonna="age",
-        min_val=250,
-        max_val=995,
-    )
-    test_values, _, n_sost_test = missing_handler.sostituisci_range_con_nan(
-        test_values,
-        colonna="age",
-        min_val=250,
-        max_val=995,
-    )
+    outliers_df = train_quality_report.get("outliers")
+    colonne_numeriche = [col for col in COLONNE_CONTINUE if col in train_values.columns and col in test_values.columns]
+    colonne_outlier = []
 
-    scelta_imputazione = menu_strategia_imputazione_age()
+    if outliers_df is not None:
+        for col in colonne_numeriche:
+            if col in outliers_df.index and float(outliers_df.loc[col, "n_outliers"]) > 0:
+                colonne_outlier.append(col)
+
+    if not colonne_outlier:
+        print("\nNessuna feature numerica con outlier rilevati: nessuna imputazione outlier necessaria.")
+
+    outlier_replacement_counts = {}
+    for col in colonne_outlier:
+        lower_bound = float(outliers_df.loc[col, "lower_bound"])
+        upper_bound = float(outliers_df.loc[col, "upper_bound"])
+
+        train_values, n_sost_train = sostituisci_fuori_bound_con_nan(
+            train_values,
+            colonna=col,
+            lower_bound=lower_bound,
+            upper_bound=upper_bound,
+        )
+        test_values, n_sost_test = sostituisci_fuori_bound_con_nan(
+            test_values,
+            colonna=col,
+            lower_bound=lower_bound,
+            upper_bound=upper_bound,
+        )
+
+        outlier_replacement_counts[col] = {
+            "lower_bound_train": lower_bound,
+            "upper_bound_train": upper_bound,
+            "n_valori_sostituiti_train": n_sost_train,
+            "n_valori_sostituiti_test": n_sost_test,
+        }
+
+    scelta_imputazione = menu_strategia_imputazione_outlier_numerici()
     risultati_knn = None
+    risultati_knn_per_colonna = {}
     solo_log_imputazione = True
 
-    if scelta_imputazione == "5":
-        risultati_knn = missing_handler.valuta_strategie_con_knn_veloce(
-            train_df=train_values,
-            train_labels=train_labels,
-            colonna="age",
-            target_col="damage_grade",
-            max_rows=20000,
-            n_neighbors_valutazione=5,
+    if scelta_imputazione == "5" and colonne_outlier:
+        frames_risultati = []
+        for col in colonne_outlier:
+            risultati_col = missing_handler.valuta_strategie_con_knn_veloce(
+                train_df=train_values,
+                train_labels=train_labels,
+                colonna=col,
+                target_col="damage_grade",
+                max_rows=20000,
+                n_neighbors_valutazione=5,
+            )
+            risultati_knn_per_colonna[col] = risultati_col
+
+            risultati_col_con_colonna = risultati_col.copy()
+            risultati_col_con_colonna["colonna"] = col
+            frames_risultati.append(risultati_col_con_colonna)
+
+            print("\n" + "=" * 80)
+            print(f"VALUTAZIONE STRATEGIE CON KNN VELOCE - COLONNA: {col}")
+            print("=" * 80)
+            print(risultati_col.to_string(index=False))
+
+        risultati_knn = pd.concat(frames_risultati, ignore_index=True)
+        riepilogo_knn = (
+            risultati_knn
+            .groupby("strategia", as_index=False)
+            .agg(
+                accuracy_media=("accuracy", "mean"),
+                accuracy_min=("accuracy", "min"),
+                accuracy_max=("accuracy", "max"),
+                n_colonne=("colonna", "nunique"),
+            )
+            .sort_values("accuracy_media", ascending=False)
+            .reset_index(drop=True)
         )
 
         print("\n" + "=" * 80)
-        print("VALUTAZIONE STRATEGIE CON KNN VELOCE")
+        print("RIEPILOGO STRATEGIE KNN (MEDIA SU TUTTE LE COLONNE OUTLIER)")
         print("=" * 80)
-        print(risultati_knn.to_string(index=False))
+        print(riepilogo_knn.to_string(index=False))
 
-        strategia_migliore = risultati_knn.iloc[0]["strategia"]
-        print(f"\nStrategia migliore per accuracy KNN: {strategia_migliore}")
+        strategia_migliore = riepilogo_knn.iloc[0]["strategia"]
+        print(f"\nStrategia migliore media per accuracy KNN: {strategia_migliore}")
 
         mappa_scelta = {
             "univariata_media": "1",
@@ -310,55 +375,64 @@ def main():
         }
         scelta_imputazione = mappa_scelta[strategia_migliore]
 
-    train_values, test_values, age_imputation_report = applica_strategia_imputazione_age(
-        missing_handler=missing_handler,
-        train_values=train_values,
-        test_values=test_values,
-        scelta=scelta_imputazione,
-    )
-
-    age_imputation_report["range_sostituito"] = [250, 995]
-    age_imputation_report["n_valori_sostituiti_train"] = n_sost_train
-    age_imputation_report["n_valori_sostituiti_test"] = n_sost_test
-    if risultati_knn is not None:
-        age_imputation_report["valutazione_knn_veloce"] = risultati_knn.to_dict(orient="records")
-
-    print("\n" + "=" * 80)
-    print(f"IMPUTAZIONE AGE - {age_imputation_report['strategia'].upper()}")
-    print("=" * 80)
-    print(f"Valori in [250, 995] sostituiti con NaN - train: {n_sost_train}, test: {n_sost_test}")
-    print(
-        f"Missing age train prima/dopo: "
-        f"{age_imputation_report['n_missing_train_prima']} -> {age_imputation_report['n_missing_train_dopo']}"
-    )
-    print(
-        f"Missing age test prima/dopo: "
-        f"{age_imputation_report['n_missing_test_prima']} -> {age_imputation_report['n_missing_test_dopo']}"
-    )
-    if age_imputation_report["strategia"] in {"univariata_media", "univariata_mediana"}:
-        nome_valore = "Media" if age_imputation_report["strategia"] == "univariata_media" else "Mediana"
-        print(
-            f"{nome_valore} usata per imputare '{age_imputation_report['colonna']}': "
-            f"{age_imputation_report['valore_imputazione_train']:.6f}"
+    imputation_reports = {}
+    for col in colonne_outlier:
+        train_values, test_values, col_report = applica_strategia_imputazione_colonna(
+            missing_handler=missing_handler,
+            train_values=train_values,
+            test_values=test_values,
+            scelta=scelta_imputazione,
+            colonna=col,
         )
-    if age_imputation_report["strategia"] == "multivariata_regressione_lineare":
-        def fmt_val(v):
-            return f"{v:.6f}" if v is not None else "n/a"
 
+        col_report.update(outlier_replacement_counts[col])
+        if col in risultati_knn_per_colonna:
+            col_report["valutazione_knn_veloce"] = risultati_knn_per_colonna[col].to_dict(orient="records")
+
+        imputation_reports[col] = col_report
+
+        print("\n" + "=" * 80)
+        print(f"IMPUTAZIONE COLONNA '{col}' - {col_report['strategia'].upper()}")
+        print("=" * 80)
         print(
-            "Valori imputati TRAIN (regressione) - "
-            f"media: {fmt_val(age_imputation_report.get('train_media_imputata'))}, "
-            f"mediana: {fmt_val(age_imputation_report.get('train_mediana_imputata'))}, "
-            f"min: {fmt_val(age_imputation_report.get('train_min_imputato'))}, "
-            f"max: {fmt_val(age_imputation_report.get('train_max_imputato'))}"
+            f"Valori fuori bound train [{col_report['lower_bound_train']:.2f}, {col_report['upper_bound_train']:.2f}] "
+            f"sostituiti con NaN - train: {col_report['n_valori_sostituiti_train']}, "
+            f"test: {col_report['n_valori_sostituiti_test']}"
         )
         print(
-            "Valori imputati TEST (regressione) - "
-            f"media: {fmt_val(age_imputation_report.get('test_media_imputata'))}, "
-            f"mediana: {fmt_val(age_imputation_report.get('test_mediana_imputata'))}, "
-            f"min: {fmt_val(age_imputation_report.get('test_min_imputato'))}, "
-            f"max: {fmt_val(age_imputation_report.get('test_max_imputato'))}"
+            f"Missing {col} train prima/dopo: "
+            f"{col_report['n_missing_train_prima']} -> {col_report['n_missing_train_dopo']}"
         )
+        print(
+            f"Missing {col} test prima/dopo: "
+            f"{col_report['n_missing_test_prima']} -> {col_report['n_missing_test_dopo']}"
+        )
+
+        if col_report["strategia"] in {"univariata_media", "univariata_mediana"}:
+            nome_valore = "Media" if col_report["strategia"] == "univariata_media" else "Mediana"
+            print(
+                f"{nome_valore} usata per imputare '{col_report['colonna']}': "
+                f"{col_report['valore_imputazione_train']:.6f}"
+            )
+
+        if col_report["strategia"] == "multivariata_regressione_lineare":
+            def fmt_val(v):
+                return f"{v:.6f}" if v is not None else "n/a"
+
+            print(
+                "Valori imputati TRAIN (regressione) - "
+                f"media: {fmt_val(col_report.get('train_media_imputata'))}, "
+                f"mediana: {fmt_val(col_report.get('train_mediana_imputata'))}, "
+                f"min: {fmt_val(col_report.get('train_min_imputato'))}, "
+                f"max: {fmt_val(col_report.get('train_max_imputato'))}"
+            )
+            print(
+                "Valori imputati TEST (regressione) - "
+                f"media: {fmt_val(col_report.get('test_media_imputata'))}, "
+                f"mediana: {fmt_val(col_report.get('test_mediana_imputata'))}, "
+                f"min: {fmt_val(col_report.get('test_min_imputato'))}, "
+                f"max: {fmt_val(col_report.get('test_max_imputato'))}"
+            )
 
     # =======================
     # VALIDAZIONE TRAIN/TEST (PRIMA DEL ONE-HOT)
@@ -557,20 +631,27 @@ def main():
         report = esegui_silenzioso(handler.analizza, df_merged, target_col="damage_grade")
     else:
         report = handler.analizza(df_merged, target_col="damage_grade")
-    report["age_imputation"] = age_imputation_report
+    report["numeric_outlier_imputation"] = imputation_reports
+    if "age" in imputation_reports:
+        report["age_imputation"] = imputation_reports["age"]
     report["pca"] = pca_report
 
     best_accuracy_knn = None
     if risultati_knn is not None and not risultati_knn.empty:
-        best_accuracy_knn = float(risultati_knn.iloc[0]["accuracy"])
+        best_accuracy_knn = float(risultati_knn.groupby("strategia")["accuracy"].mean().max())
 
     print("\n" + "=" * 80)
     print("PREPROCESSING COMPLETATO")
     print("=" * 80)
     print("FINITO PREPROCESSING: scelta dei metodi di imputazione con menu completata.")
-    print(f"Metodo imputazione selezionato: {age_imputation_report['strategia']}")
+    if imputation_reports:
+        strategia_usata = next(iter(imputation_reports.values()))["strategia"]
+        print(f"Metodo imputazione selezionato: {strategia_usata}")
+        print(f"Colonne numeriche imputate per outlier: {list(imputation_reports.keys())}")
+    else:
+        print("Nessuna colonna numerica da imputare per outlier.")
     if best_accuracy_knn is not None:
-        print(f"Migliore accuracy KNN veloce: {best_accuracy_knn:.6f}")
+        print(f"Migliore accuracy media KNN veloce: {best_accuracy_knn:.6f}")
 
     salva_dataset_preprocessati(train_values, train_labels, test_values)
 
