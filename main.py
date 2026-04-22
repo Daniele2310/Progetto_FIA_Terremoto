@@ -341,6 +341,24 @@ def main():
             f"{nome_valore} usata per imputare '{age_imputation_report['colonna']}': "
             f"{age_imputation_report['valore_imputazione_train']:.6f}"
         )
+    if age_imputation_report["strategia"] == "multivariata_regressione_lineare":
+        def fmt_val(v):
+            return f"{v:.6f}" if v is not None else "n/a"
+
+        print(
+            "Valori imputati TRAIN (regressione) - "
+            f"media: {fmt_val(age_imputation_report.get('train_media_imputata'))}, "
+            f"mediana: {fmt_val(age_imputation_report.get('train_mediana_imputata'))}, "
+            f"min: {fmt_val(age_imputation_report.get('train_min_imputato'))}, "
+            f"max: {fmt_val(age_imputation_report.get('train_max_imputato'))}"
+        )
+        print(
+            "Valori imputati TEST (regressione) - "
+            f"media: {fmt_val(age_imputation_report.get('test_media_imputata'))}, "
+            f"mediana: {fmt_val(age_imputation_report.get('test_mediana_imputata'))}, "
+            f"min: {fmt_val(age_imputation_report.get('test_min_imputato'))}, "
+            f"max: {fmt_val(age_imputation_report.get('test_max_imputato'))}"
+        )
 
     # =======================
     # VALIDAZIONE TRAIN/TEST (PRIMA DEL ONE-HOT)
