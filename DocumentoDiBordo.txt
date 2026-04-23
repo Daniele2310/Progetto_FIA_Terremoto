@@ -472,3 +472,48 @@ Conclusioni:
     Per ridurre i tempi operativi conviene usare campionamento, riduzione delle
     feature, meno vicini cercati o metodi approssimati per i neighbors.
 
+
+================================================================================
+Luca - 23/04/2026
+================================================================================
+
+REPORT BREVE - SUBSET SELECTION (SBS)
+
+- SBS parte dal set completo delle feature e rimuove iterativamente la feature che
+    degrada meno la metrica (o la migliora).
+- Criterio di stop SBS adottato:
+    l'algoritmo si ferma quando anche la migliore rimozione disponibile
+    peggiora la metrica rispetto allo step precedente.
+
+
+Impostazione run di validazione:
+- Dataset: Data/train_values.csv + Data/train_labels.csv
+- Target: damage_grade
+- One-hot encoding automatico sulle categoriche
+- Estimator di valutazione subset: KNN (weights=distance, algorithm=brute)
+- Metrica: accuracy
+- Campionamento per fattibilita: 3000 righe (su 260601 originali)
+
+
+Risultati osservati:
+- Feature iniziali/finali: 68 -> 28
+- Score baseline: 0.533333
+- Score finale: 0.621667
+- Delta vs baseline: +0.088333
+- Modelli valutati: 1969
+- Tempo totale run: 29.26 s
+- Stop reason: peggioramento_prestazioni
+
+Riepilogo:
+- Numero righe utilizzate: 3000 (campionamento stratificato dal train di 260601 righe).
+- Criterio di stop + feature utili: stop per peggioramento prestazioni (peggioramento_prestazioni);
+    subset finale con 28 feature utili (da 68 iniziali).
+- Accuratezza: baseline 0.533333, finale 0.621667, incremento +0.088333.
+- Costo computazionale: 1969 modelli valutati, 29.26 s nella run corrente;
+    ordine teorico SBS O(p^2) rispetto al numero di feature.
+
+Conclusione sintetica:
+- Implementazione SBS corretta e validata end-to-end su run controllata.
+- Metodo utile ma computazionalmente costoso; per run estese sul dataset intero
+    e raccomandata una strategia di contenimento del costo.
+
