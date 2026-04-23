@@ -517,3 +517,105 @@ Conclusione sintetica:
 - Metodo utile ma computazionalmente costoso; per run estese sul dataset intero
     e raccomandata una strategia di contenimento del costo.
 
+
+================================================================================
+Erika - 23/04/2026 (primo aggiornamento)
+================================================================================
+
+REPORT BREVE - SUBSET SELECTION (MAX-MIN)
+
+Obiettivo dell'intervento:
+- Aggiunta una seconda tecnica di subset selection, distinta da SBS, basata su
+    criterio Max-Min.
+- L'idea del metodo e selezionare feature che siano:
+    1) rilevanti rispetto al target damage_grade;
+    2) poco ridondanti rispetto alle feature gia selezionate.
+
+File implementato:
+- Feature Selection/subset selection/max_min_subset_selection.py
+
+Definizione operativa usata:
+- Score(feature) = rilevanza(feature, target) - ridondanza(feature, selected_set)
+- Rilevanza:
+    correlazione assoluta di Pearson tra la feature candidata e il target.
+- Ridondanza:
+    massima correlazione assoluta di Pearson tra la feature candidata e
+    le feature gia entrate nel subset.
+
+Scelta implementativa:
+- La selezione è greedy:
+    a ogni iterazione viene scelta la feature con score massimo.
+- Di default il metodo si ferma quando il miglior candidato disponibile
+    ha score negativo.
+- Motivazione dello stop:
+    se anche la feature migliore ha score < 0, significa che la ridondanza
+    introdotta è superiore all'informazione utile aggiunta verso il target.
+- E stata comunque mantenuta la possibilita di disattivare questo criterio
+    da riga di comando per confronti sperimentali con altri metodi.
+
+Preprocessing applicato nello script:
+- Caricamento dataset da:
+    Data/train_values.csv + Data/train_labels.csv
+    oppure, in alternativa, da CSV passato via --input.
+- Merge tra feature e label sul building_id.
+- Esclusione della colonna building_id dalla selezione.
+- One-hot encoding automatico delle feature categoriche.
+- Controllo di assenza di valori NaN prima dell'esecuzione del metodo.
+
+Output finali prodotti:
+- Feature Selection/subset selection/outputs/max_min_selected_features.csv
+- Feature Selection/subset selection/outputs/max_min_feature_correlation_matrix.csv
+- Feature Selection/subset selection/outputs/max_min_summary.json
+
+Contenuto degli output:
+- max_min_selected_features.csv:
+    contiene il subset finale selezionato in ordine di ingresso, con colonne:
+    step, selected_feature, relevance, redundancy, score.
+- max_min_feature_correlation_matrix.csv:
+    matrice di correlazione assoluta tra le feature dopo la preparazione dati;
+    usata per il calcolo della ridondanza.
+- max_min_summary.json:
+    riepilogo della run con metodo, definizioni usate, numero di feature iniziali,
+    numero di feature selezionate, eventuale limite massimo impostato e motivo stop.
+
+Come verificare il funzionamento:
+- Esecuzione standard con stop automatico su score negativo:
+    python "Feature Selection\subset selection\max_min_subset_selection.py"
+- Esecuzione con limite massimo di feature:
+    python "Feature Selection\subset selection\max_min_subset_selection.py" --max-features 15
+- Esecuzione senza stop su score negativo, utile per confronti con cardinalita fissa:
+    python "Feature Selection\subset selection\max_min_subset_selection.py" --disable-negative-stop --max-features 15
+
+Controlli di correttezza consigliati:
+- Verificare che in max_min_selected_features.csv:
+    il primo step abbia ridondanza = 0.0, perche nessuna feature e ancora selezionata.
+- Verificare che il file summary riporti coerentemente:
+    numero_feature_iniziali, numero_feature_selezionate e motivo_stop.
+- Se lo stop negativo e attivo, verificare che l'algoritmo si arresti prima di
+    aggiungere feature con contributo netto sfavorevole.
+- Confrontare il numero finale di feature selezionate con altri metodi
+    per valutare differenze.
+
+Motivazione metodologica:
+- Questo metodo e stato aggiunto per avere un criterio di subset selection
+    diverso da SBS e piu direttamente legato al compromesso tra informazione
+    utile verso il target e ridondanza interna del subset.
+- La presenza del flag per disattivare lo stop negativo rende il modulo utile
+    anche per confronti futuri con altri metodi a parità di numero di feature.
+
+
+Risultati osservati utilizzando il default (algoritmo si arresta quando score<0):
+
+Feature iniziali: 68
+Feature selezionate: 6
+Motivo stop: score_negativo
+
+Feature selezionate:
+ step              selected_feature  relevance  redundancy    score
+    1             foundation_type_r   0.343355    0.000000 0.343355
+    2                   roof_type_q   0.074460    0.006366 0.068094
+    3 has_superstructure_stone_flag   0.066039    0.014212 0.051828
+    4                    position_t   0.051605    0.019112 0.032493
+    5                count_families   0.056151    0.034281 0.021870
+    6      legal_ownership_status_w   0.029555    0.023846 0.005709
+
