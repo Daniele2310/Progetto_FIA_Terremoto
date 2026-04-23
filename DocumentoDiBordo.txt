@@ -619,3 +619,223 @@ Feature selezionate:
     5                count_families   0.056151    0.034281 0.021870
     6      legal_ownership_status_w   0.029555    0.023846 0.005709
 
+
+================================================================================
+Erika - 23/04/2026 (secondo aggiornamento)
+================================================================================
+
+REPORT BREVE - FEATURE SELECTION EMBEDDED (LASSO REGRESSION)
+
+Obiettivo dell'intervento:
+- Aggiunta una tecnica di feature selection embedded basata su regressione Lasso.
+- Il metodo seleziona automaticamente le feature durante l'addestramento del modello,
+    seguendo l'idea vista a lezione per i metodi embedded con regolarizzazione L1.
+
+File implementato:
+- Feature Selection/Embedded/lasso_feature_selection.py
+
+Idea metodologica:
+- Il Lasso minimizza una loss con un termine di penalizzazione L1 sui coefficienti:
+    loss + alpha * somma(|w_j|)
+- Effetto principale:
+    alcuni coefficienti vengono spinti esattamente a zero.
+- Quando il coefficiente di una feature diventa zero, quella feature viene esclusa.
+- In questo modo il metodo:
+    1) addestra il modello;
+    2) esegue contemporaneamente feature selection.
+
+Scelte implementative adottate:
+- Il target damage_grade viene trattato come variabile numerica ordinata (1, 2, 3),
+    cosi da poter usare la regressione Lasso come strumento embedded di selezione.
+- Le feature categoriche vengono trasformate con one-hot encoding.
+- Le feature vengono standardizzate con StandardScaler prima del Lasso,
+    perche la penalizzazione L1 e sensibile alla scala delle variabili.
+- Una feature viene considerata selezionata se il suo coefficiente finale ha
+    valore assoluto maggiore della tolleranza numerica impostata nel codice.
+
+Gestione del parametro alpha:
+- Alpha controlla l'intensita della penalizzazione L1:
+    piu alpha cresce, piu il modello tende ad azzerare coefficienti
+    e quindi a selezionare meno feature.
+- Nel codice sono state mantenute tre possibilita:
+    1) scelta automatica con LassoCV;
+    2) valore consigliato alpha = 0.002;
+    3) valore personalizzato inserito manualmente dall'utente.
+- Nota su LassoCV e sui fold:
+    quando si usa LassoCV, alpha non viene fissato a mano ma viene scelto
+    automaticamente provando piu valori candidati e confrontandoli tramite
+    cross-validation.
+- In particolare, il training set viene diviso in k fold:
+    a ogni iterazione il modello si allena su k-1 fold e valida sul fold rimanente;
+    il processo viene ripetuto piu volte e alla fine viene scelto l'alpha
+    con prestazione media migliore.
+- Nel codice il default e cv_folds = 5:
+    quindi, se l'utente non passa --alpha, il metodo automatico LassoCV
+    sceglie alpha usando una cross-validation a 5 fold.
+- Se invece l'utente passa un alpha esplicito da riga di comando oppure
+    sceglie un valore fisso dal menu, i fold non vengono usati per decidere alpha.
+
+Motivazione della scelta di menu per alpha:
+- Non e stato impostato 0.002 come default fisso.
+- Motivazione:
+    LassoCV rimane la scelta piu neutra e generalizzabile, perche sceglie alpha
+    automaticamente tramite cross-validation.
+- Allo stesso tempo, dalle prove sperimentali svolte sul dataset del progetto,
+    alpha = 0.002 e emerso come buon compromesso tra compattezza del subset
+    e mantenimento delle prestazioni.
+- Per questo motivo e stato inserito come valore consigliato nel menu iniziale,
+    ma non come sostituto rigido del default automatico.
+
+Interazione utente aggiunta nello script:
+- Se l'utente non passa --alpha da riga di comando, il programma mostra una domanda
+    iniziale che spiega brevemente cosa sia alpha e propone:
+    1) LassoCV automatico
+    2) alpha consigliato = 0.002
+    3) inserimento manuale di un alpha personalizzato
+- Se invece l'utente passa gia --alpha da CLI, il programma usa quel valore
+    direttamente senza mostrare il menu.
+
+Preprocessing applicato nello script:
+- Caricamento dataset da:
+    Data/train_values.csv + Data/train_labels.csv
+    oppure, in alternativa, da CSV passato via --input.
+- Merge tra feature e label sul building_id.
+- Esclusione della colonna building_id dalla selezione.
+- One-hot encoding automatico delle feature categoriche.
+- Controllo di assenza di valori NaN prima dell'esecuzione del metodo.
+- Standardizzazione delle feature prima del fit del Lasso.
+
+Output finali prodotti:
+- Feature Selection/Embedded/outputs/lasso_selected_features.csv
+- Feature Selection/Embedded/outputs/lasso_all_coefficients.csv
+- Feature Selection/Embedded/outputs/lasso_summary.json
+
+Contenuto degli output:
+- lasso_selected_features.csv:
+    contiene le feature selezionate, ordinate per importanza,
+    con colonne: rank, feature, coefficient, abs_coefficient.
+- lasso_all_coefficients.csv:
+    contiene tutte le feature candidate con il coefficiente finale del modello.
+- lasso_summary.json:
+    riepilogo della run con metodo usato, numero di feature iniziali,
+    numero di feature selezionate, alpha usato, intercetta e altre info di contesto.
+
+Come verificare il funzionamento:
+- Esecuzione standard con scelta alpha via menu:
+    python "Feature Selection\Embedded\lasso_feature_selection.py"
+- Esecuzione con alpha fisso da CLI:
+    python "Feature Selection\Embedded\lasso_feature_selection.py" --alpha 0.002
+- Esecuzione con diverso numero di fold per LassoCV:
+    python "Feature Selection\Embedded\lasso_feature_selection.py" --cv-folds 10
+
+
+Risultati osservati nella prima run con scelta automatica (LassoCV):
+- Feature iniziali: 68
+- Feature selezionate: 58
+- Alpha usato: 0.0002100691
+
+Top feature emerse nella run automatica:
+- has_superstructure_mud_mortar_stone
+- count_floors_pre_eq
+- ground_floor_type_v
+- foundation_type_w
+- has_superstructure_stone_flag
+- has_superstructure_cement_mortar_brick
+- foundation_type_i
+- has_superstructure_timber
+- foundation_type_r
+- roof_type_q
+
+Studio comparativo sul parametro alpha:
+
+Impostazione del confronto:
+- Split holdout stratificato 80/20.
+- La feature selection Lasso viene eseguita solo sul train,
+    per evitare leakage verso il validation set.
+- Modello downstream di confronto:
+    LogisticRegression con standardizzazione.
+- Metriche osservate:
+    accuracy, f1_macro, balanced_accuracy.
+- Baseline di riferimento:
+    LogisticRegression su tutte le 68 feature.
+
+Baseline full features:
+
++------------------+-----------+----------+-------------------+
+| n_features       | accuracy  | f1_macro | balanced_accuracy |
++------------------+-----------+----------+-------------------+
+| 68               | 0.592084  | 0.463221 | 0.455160          |
++------------------+-----------+----------+-------------------+
+
+Tabella confronto alpha:
+
++--------------+----------------------+-----------+----------+-------------------+
+| alpha        | n_feature_selezionate| accuracy  | f1_macro | balanced_accuracy |
++--------------+----------------------+-----------+----------+-------------------+
+| 0.0001       | 60                   | 0.592026  | 0.463198 | 0.455174          |
+| 0.0002100691 | 59                   | 0.591911  | 0.462937 | 0.455075          |
+| 0.0005       | 56                   | 0.591585  | 0.462495 | 0.454506          |
+| 0.001        | 54                   | 0.591451  | 0.462069 | 0.454168          |
+| 0.002        | 49                   | 0.591815  | 0.462779 | 0.454610          |
+| 0.005        | 39                   | 0.591834  | 0.460540 | 0.453118          |
+| 0.01         | 27                   | 0.580208  | 0.411801 | 0.423636          |
++--------------+----------------------+-----------+----------+-------------------+
+
+Lettura dei risultati:
+- Da 0.0001 a 0.005 le prestazioni restano molto vicine alla baseline.
+- All'aumentare di alpha, il numero di feature selezionate si riduce progressivamente.
+- Il crollo piu netto delle prestazioni si osserva con alpha = 0.01,
+    quando la selezione diventa troppo aggressiva.
+
+Conclusione dello studio su alpha:
+- Alpha automatico scelto da LassoCV:
+    molto conservativo, mantiene quasi tutte le feature.
+- Alpha = 0.002:
+    buon compromesso tra riduzione del numero di feature e mantenimento
+    delle prestazioni rispetto alla baseline.
+- Alpha = 0.005:
+    ancora utilizzabile per una selezione piu compatta,
+    ma con un calo leggermente piu marcato nelle metriche.
+- Alpha = 0.01:
+    troppo aggressivo per questo dataset nelle prove svolte.
+
+Motivazione della raccomandazione finale:
+- E stato deciso di mantenere LassoCV come default automatico nel codice,
+    perche e la scelta piu generale e meno arbitraria.
+- E stato pero aggiunto alpha = 0.002 come opzione consigliata nel menu,
+    perche nelle prove effettuate riduce le feature da 68 a 49
+    senza perdita rilevante di prestazione.
+
+Feature risultate stabili in tutte le prove principali:
+- count_families
+- count_floors_pre_eq
+- foundation_type_i
+- foundation_type_r
+- foundation_type_w
+- ground_floor_type_f
+- ground_floor_type_v
+- has_secondary_use
+- has_secondary_use_rental
+- has_superstructure_adobe_mud
+- has_superstructure_bamboo
+- has_superstructure_cement_mortar_brick
+- has_superstructure_mud_mortar_stone
+- has_superstructure_other
+- has_superstructure_rc_engineered
+- has_superstructure_rc_non_engineered
+- has_superstructure_stone_flag
+- has_superstructure_timber
+- legal_ownership_status_w
+- other_floor_type_s
+- plan_configuration_q
+- plan_configuration_u
+- position_s
+- position_t
+- roof_type_q
+- roof_type_x
+
+Osservazione finale:
+- Le feature piu persistenti sono in larga parte strutturali, costruttive
+    e legate ai materiali dell'edificio.
+- Questo e coerente con la natura del problema di predizione del danno sismico.
+
