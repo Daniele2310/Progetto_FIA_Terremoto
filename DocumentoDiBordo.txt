@@ -839,3 +839,7 @@ Osservazione finale:
     e legate ai materiali dell'edificio.
 - Questo e coerente con la natura del problema di predizione del danno sismico.
 
+
+
+ATTENZIONE!! MEMO:
+verificare preprocessing una volta richiamati i metodi nel main
