@@ -43,3 +43,4 @@ Thumbs.db
 DataPreprocessed/*
 !DataPreprocessed/.gitkeep
 Feature Selection/subset selection/outputs/
+Feature Selection/Embedded/outputs/
