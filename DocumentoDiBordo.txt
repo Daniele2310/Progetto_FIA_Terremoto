@@ -759,6 +759,90 @@ Impostazione del confronto:
 - Baseline di riferimento:
     LogisticRegression su tutte le 68 feature.
 
+
+================================================================================
+Nicole - 24/04/2026
+================================================================================
+
+REPORT BREVE - AGGIORNAMENTO PCA E SCREE PLOT
+
+Obiettivo dell'intervento:
+- Rendere la PCA piu pulita e interpretabile all'interno della pipeline di preprocessing.
+- Spostare la maggior parte della logica dal main.py al modulo dedicato PCA.py.
+- Ottenere uno scree plot utile alla scelta manuale del punto di gomito.
+
+Scelte implementative adottate:
+- Il blocco PCA nel main.py e stato ridotto al minimo indispensabile:
+    creazione del PCAHandler, chiamata alla pipeline PCA e recupero dei risultati.
+- La logica principale della PCA e stata concentrata in:
+    Feature Selection/Feature Ranking/PCA.py
+- Lo scree plot e stato mantenuto come unico grafico di supporto per la scelta
+    del numero di componenti.
+- La scelta finale di n_components avviene manualmente dopo la visualizzazione
+    del grafico.
+
+Colonne escluse esplicitamente dalla PCA:
+- building_id
+- geo_level_1_id
+- geo_level_2_id
+- geo_level_3_id
+- damage_grade
+
+Motivazione dell'esclusione:
+- building_id e un identificatore univoco e non contiene informazione utile
+    da comprimere con PCA.
+- geo_level_1_id, geo_level_2_id e geo_level_3_id sono codici identificativi
+    geografici: lasciarli nella PCA alterava fortemente la scala della varianza
+    e produceva uno scree plot poco interpretabile.
+- damage_grade e il target e non deve entrare nel fit della PCA.
+
+Colonne riattaccate dopo la PCA:
+- building_id
+- geo_level_1_id
+- geo_level_2_id
+- geo_level_3_id
+- damage_grade viene riallegato successivamente tramite merge con train_labels.
+
+Modifica sul calcolo della varianza:
+- Non viene piu usata una rappresentazione forzata in scala 0-1 o 0-100.
+- Nel report e nello scree plot viene usata la explained_variance del modello,
+    mantenuta positiva e letta direttamente dal PCA di sklearn.
+
+Supporto aggiunto alla scelta del gomito:
+- Oltre al grafico, la pipeline stampa nel terminale:
+    1) TABELLA VARIANZA SPIEGATA PCA
+    2) LOG SUPPORTO SCELTA GOMITO PCA
+- Per ogni componente principale vengono mostrati:
+    explained_variance,
+    cumulative_explained_variance,
+    delta_vs_precedente.
+- Il delta rispetto alla componente precedente aiuta a capire dove la riduzione
+    del contributo informativo diventa marcata e quindi dove puo trovarsi il gomito.
+
+Output prodotti dalla pipeline PCA:
+- DataPreprocessed/scree_plot.png
+- DataPreprocessed/pca_variance_summary.csv
+- DataPreprocessed/train_values_preprocessed.csv
+- DataPreprocessed/test_values_preprocessed.csv
+- DataPreprocessed/train_features_labels_preprocessed.csv
+
+Correzione aggiuntiva collegata al preprocessing:
+- In DataPreprocessing/missingValues.py e stata corretta la fase di valutazione
+    KNN veloce delle strategie di imputazione.
+- Problema risolto:
+    il KNeighborsClassifier andava in errore per la presenza di NaN residui
+    durante la valutazione di una singola colonna.
+- Soluzione applicata:
+    riempimento temporaneo dei NaN con le mediane del train solo nella fase
+    di valutazione KNN veloce, senza alterare la logica della PCA.
+
+Conclusione:
+- La PCA ora opera solo sulle feature effettivamente adatte alla riduzione dimensionale.
+- Gli identificativi e il target restano fuori dal fit e vengono preservati/riallegati dopo.
+- Il main.py e piu leggero.
+- Lo scree plot e il log testuale sono ora piu adatti a una scelta manuale
+    del numero di componenti.
+
 Baseline full features:
 
 +------------------+-----------+----------+-------------------+
