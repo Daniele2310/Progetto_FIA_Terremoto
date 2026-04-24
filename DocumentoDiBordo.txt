@@ -843,3 +843,48 @@ Osservazione finale:
 
 ATTENZIONE!! MEMO:
 verificare preprocessing una volta richiamati i metodi nel main
+
+
+================================================================================
+AGGIORNAMENTO DOCUMENTO DI BORDO: IMPLEMENTAZIONE BEST FIRST SEARCH
+================================================================================
+
+1. LOGICA DI IMPLEMENTAZIONE
+L'algoritmo Best First è stato implementato seguendo un approccio di Forward Selection guidato da una coda di priorità:
+- Inizializzazione: Si parte da un subset vuoto e si valutano tutte le singole feature.
+- Espansione (Priority Queue): I subset vengono inseriti in una coda di priorità (gestita tramite l'heapq nativo di Python). A ogni iterazione, l'algoritmo estrae sempre il subset con lo score più alto e prova a espanderlo aggiungendo una nuova feature alla volta.
+- Caching: È stato implementato un "closed_set" (struttura dati Set) per memorizzare i subset già valutati, evitando ricalcoli ridondanti.
+- Modello e Valutazione: Per la valutazione di ogni subset è stato utilizzato un Decision Tree Classifier valutato tramite una 5-fold Cross-Validation sul set di addestramento. La metrica di riferimento utilizzata è l'Accuracy.
+
+2. SCELTE PROGETTUALI
+- Patience (k=5): La condizione di stop è stata impostata su una "patience" di 5. Questo significa che l'algoritmo si ferma se, per 5 espansioni consecutive, nessuno dei nuovi subset generati riesce a superare il punteggio massimo globale. È un "euristic sweet spot" scelto per bilanciare l'esplorazione (evitando di fermarsi a un minimo locale al primo peggioramento) e il costo computazionale (evitando una ricerca esaustiva infinita).
+- Sottocampionamento (max_rows): Poiché il dataset completo conta oltre 260.000 righe e la Cross-Validation richiede l'addestramento di 5 alberi per ogni subset testato, è stata introdotta la possibilità di eseguire la ricerca su un campione stratificato (es. 15.000 righe) per mantenere i tempi di calcolo ragionevoli.
+- Indipendenza dal Test Set: La validazione avviene interamente all'interno del Training Set grazie ai fold della Cross-Validation, prevenendo rigorosamente il Data Leakage.
+
+3. RESOCONTO DEI RISULTATI
+Dopo aver risolto un disallineamento iniziale (in cui il dataset era stato preventivamente ridotto a 1 sola feature dalla PCA), il test sui dati originali (al netto delle variabili rimosse) ha prodotto risultati eccellenti:
+- Feature Iniziali: 69
+- Feature Finali Selezionate: 12
+- Riduzione della Complessità: 82.6% delle feature scartate.
+- Score (Accuracy): 0.6913 (~69.1%)
+
+Valutazione del risultato: 
+Mantenere (o raggiungere) un'Accuracy del 69.1% su un problema multiclasse sbilanciato come quello del Terremoto in Nepal (dove la baseline del "rispondi sempre alla classe di maggioranza" è circa il 57%) usando unicamente un Decision Tree di base e sole 12 variabili è un successo notevole. Il modello ha isolato con successo il "cuore" informativo del dataset, scartando con successo il rumore.
+
+4. PROSSIMI PASSI E SVILUPPI FUTURI
+Ora che abbiamo isolato le 12 "Super Feature", la strada è spianata per la fase di modellazione avanzata:
+1) Addestramento Modelli Complessi: Utilizzare questo subset ristretto di 12 feature per alimentare modelli più sofisticati (es. Random Forest, XGBoost, LightGBM). Con la rimozione del rumore di fondo, questi modelli potrebbero performare significativamente meglio e avvicinarsi alla soglia competitiva del 74-75%.
+2) Confronto Approcci: Valutare e confrontare formalmente le performance dei modelli finali addestrati su:
+   - Tutto il dataset preprocessato (69 feature)
+   - Il dataset ridotto con SBS
+   - Il dataset ridotto con Best First (12 feature)
+   - Le componenti estratte dalla PCA
+3) Hyperparameter Tuning: Avviare la ricerca dei parametri ottimali (GridSearch/RandomSearch) sui modelli complessi scelti, sfruttando la velocità garantita dal ridotto numero di dimensioni ottenuto.
+
+
+
+
+
+
+
+
