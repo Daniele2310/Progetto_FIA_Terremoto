@@ -18,11 +18,11 @@ SHOW_DATA_QUALITY_PLOTS = False
 
 
 def carica_pca_handler():
-    """Carica PCAHandler dal modulo in Feature Selection/feature ranking/PCA.py."""
+    """Carica PCAHandler dal modulo in Feature Selection/Feature Ranking/PCA.py."""
     module_path = (
         Path(__file__).resolve().parent
         / "Feature Selection"
-        / "Feature ranking"
+        / "Feature Ranking"
         / "PCA.py"
     )
 
@@ -68,75 +68,6 @@ def menu_strategia_imputazione_outlier_numerici():
         scelta = "5"
 
     return scelta
-
-
-def menu_modalita_pca():
-    """
-    Permette di scegliere come determinare il numero di componenti PCA.
-    Default: scelta manuale tramite scree plot e metodo del gomito.
-    """
-    print("\n" + "=" * 80)
-    print("MENU PCA")
-    print("=" * 80)
-    print("1) Scelta automatica tramite soglia di varianza cumulativa")
-    print("2) Scelta manuale tramite scree plot e metodo del gomito")
-
-    try:
-        scelta = input("Seleziona opzione [1-2] (default=2): ").strip()
-    except EOFError:
-        scelta = ""
-
-    if scelta not in {"1", "2"}:
-        scelta = "2"
-
-    return scelta
-
-
-def leggi_threshold_pca(default=0.95):
-    """Legge da input la soglia di varianza cumulativa per la PCA."""
-    try:
-        valore = input(
-            f"Inserisci la soglia di varianza cumulativa desiderata (default={default}): "
-        ).strip()
-    except EOFError:
-        valore = ""
-
-    if not valore:
-        return default
-
-    try:
-        threshold = float(valore)
-    except ValueError as exc:
-        raise ValueError("La soglia PCA deve essere un numero compreso tra 0 e 1.") from exc
-
-    if not (0 < threshold <= 1):
-        raise ValueError("La soglia PCA deve stare nell'intervallo (0, 1].")
-
-    return threshold
-
-
-def leggi_n_componenti_pca(max_componenti):
-    """Legge da input il numero di componenti PCA da mantenere."""
-    try:
-        valore = input(
-            f"Inserisci il numero di componenti da mantenere [1-{max_componenti}]: "
-        ).strip()
-    except EOFError:
-        valore = ""
-
-    if not valore:
-        raise ValueError("Devi inserire il numero di componenti PCA da mantenere.")
-
-    try:
-        n_componenti = int(valore)
-    except ValueError as exc:
-        raise ValueError("Il numero di componenti PCA deve essere un intero.") from exc
-
-    if not (1 <= n_componenti <= max_componenti):
-        raise ValueError(f"Il numero di componenti deve stare tra 1 e {max_componenti}.")
-
-    return n_componenti
-
 
 def applica_strategia_imputazione_colonna(missing_handler, train_values, test_values, scelta, colonna):
     """Applica la strategia selezionata su una colonna e ritorna train/test imputati + report."""
@@ -540,113 +471,21 @@ def main():
     # =======================
     # PCA
     # =======================
-    if train_values.isnull().sum().sum() > 0 or test_values.isnull().sum().sum() > 0:
-        raise ValueError("Sono presenti valori NaN: completa imputazione/pulizia prima di applicare PCA.")
-
-    modalita_pca = menu_modalita_pca()
-    pca_esplorativa = PCAHandler()
-    pca_esplorativa.fit(
-        df=train_values,
-        exclude_columns=["building_id"],
+    pca_handler = PCAHandler()
+    pca_result = pca_handler.run_interactive_pipeline(
+        train_df=train_values,
+        test_df=test_values,
+        labels_df=train_labels,
+        output_dir="DataPreprocessed",
+        id_columns=["building_id", "geo_level_1_id", "geo_level_2_id", "geo_level_3_id"],
+        target_column="damage_grade",
+        show_plot=True,
     )
 
-    explained_full = pca_esplorativa.explained_variance_ratio()
-    cumulative_full = pca_esplorativa.cumulative_explained_variance()
-    pca_summary = pd.DataFrame(
-        {
-            "explained_variance_ratio": explained_full.round(6),
-            "cumulative_explained_variance": cumulative_full.round(6),
-        }
-    )
-
-    output_dir = Path("DataPreprocessed")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    variance_output_path = output_dir / "pca_variance_summary.csv"
-    loadings_output_path = output_dir / "pca_loadings.csv"
-    scree_plot_output_path = output_dir / "scree_plot.png"
-
-    pca_summary.to_csv(variance_output_path)
-
-    default_threshold_pca = 0.95
-
-    print("\n" + "=" * 80)
-    print("TABELLA VARIANZA SPIEGATA PCA")
-    print("=" * 80)
-    print(pca_summary.to_string())
-
-    threshold_pca = None
-    if modalita_pca == "1":
-        threshold_pca = leggi_threshold_pca(default=default_threshold_pca)
-        pca_esplorativa.plot_scree(
-            output_path=scree_plot_output_path,
-            threshold=threshold_pca,
-            show_plot=True,
-        )
-        n_componenti = pca_esplorativa.choose_n_components(threshold=threshold_pca)
-        metodo_selezione_pca = "threshold"
-    else:
-        pca_esplorativa.plot_scree(
-            output_path=scree_plot_output_path,
-            show_plot=True,
-        )
-        print(
-            "\nOsserva lo scree plot e scegli il numero di componenti nel punto di gomito."
-        )
-        n_componenti = leggi_n_componenti_pca(
-            max_componenti=len(pca_summary),
-        )
-        metodo_selezione_pca = "gomito"
-
-    pca_esplorativa.plot_scree(
-        output_path=scree_plot_output_path,
-        threshold=threshold_pca,
-        selected_n=n_componenti,
-        show_plot=False,
-    )
-
-    pca_handler = PCAHandler(n_components=n_componenti)
-    pca_handler.fit(
-        df=train_values,
-        exclude_columns=["building_id"],
-    )
-
-    train_values = pca_handler.transform(
-        train_values,
-        preserve_columns=["building_id"],
-    )
-
-    test_values = pca_handler.transform(
-        test_values,
-        preserve_columns=["building_id"],
-    )
-
-    pca_handler.get_loadings().to_csv(loadings_output_path)
-    pca_report = pca_handler.build_report(threshold=threshold_pca)
-    pca_report["selection_method"] = metodo_selezione_pca
-    pca_report["n_components_selected"] = int(n_componenti)
-    pca_report["variance_table_output_path"] = str(variance_output_path)
-    pca_report["loadings_output_path"] = str(loadings_output_path)
-    pca_report["scree_plot_output_path"] = str(scree_plot_output_path)
-
-    print("\n" + "=" * 80)
-    print("PCA COMPLETATA")
-    print("=" * 80)
-    print(f"Metodo selezione componenti: {metodo_selezione_pca}")
-    print(f"Numero componenti selezionate: {n_componenti}")
-    print(
-        f"Varianza cumulativa spiegata: "
-        f"{list(pca_report['cumulative_explained_variance'].values())[-1]:.4f}"
-    )
-    print(f"Nuove dimensioni train: {train_values.shape}")
-    print(f"Nuove dimensioni test: {test_values.shape}")
-    print(f"Tabella varianza salvata in: {variance_output_path}")
-    print(f"Loadings salvati in: {loadings_output_path}")
-    print(f"Scree plot salvato in: {scree_plot_output_path}")
-
-    # =======================
-    # MERGE TRAIN + LABELS
-    # =======================
-    df_merged = pd.merge(train_values, train_labels, on="building_id")
+    train_values = pca_result["train_transformed"]
+    test_values = pca_result["test_transformed"]
+    df_merged = pca_result["train_with_target"]
+    pca_report = pca_result["report"]
 
     # =======================
     # MISSING VALUES

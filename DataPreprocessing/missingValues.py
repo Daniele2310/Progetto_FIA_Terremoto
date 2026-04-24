@@ -588,6 +588,14 @@ class MissingValuesHandler:
                 random_state=random_state
             )
 
+            # Durante la valutazione di una singola colonna possono rimanere NaN
+            # nelle altre feature numeriche già marcate come outlier.
+            # KNNClassifier non supporta NaN, quindi usiamo le mediane del train
+            # come fallback solo per questa fase di valutazione.
+            mediane_train = X_train.median(numeric_only=True)
+            X_train = X_train.fillna(mediane_train).fillna(0)
+            X_val = X_val.fillna(mediane_train).fillna(0)
+
             scaler = StandardScaler(with_mean=False)
             X_train_scaled = scaler.fit_transform(X_train)
             X_val_scaled = scaler.transform(X_val)
