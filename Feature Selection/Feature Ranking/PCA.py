@@ -240,7 +240,6 @@ class PCAHandler:
         id_columns: Optional[Iterable[str]] = None,
         target_column: str = "damage_grade",
         exclude_columns: Optional[Iterable[str]] = None,
-        show_plot: bool = True,
     ) -> dict:
         if train_df.isnull().any().any() or test_df.isnull().any().any():
             raise ValueError(
@@ -291,7 +290,7 @@ class PCAHandler:
 
         self.plot_scree(
             output_path=scree_plot_output_path,
-            show_plot=show_plot,
+            show_plot=True,
         )
 
         selected_n = self._prompt_n_components(max_components=len(variance_table))

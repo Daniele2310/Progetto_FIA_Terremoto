@@ -479,7 +479,6 @@ def main():
         output_dir="DataPreprocessed",
         id_columns=["building_id", "geo_level_1_id", "geo_level_2_id", "geo_level_3_id"],
         target_column="damage_grade",
-        show_plot=True,
     )
 
     train_values = pca_result["train_transformed"]
