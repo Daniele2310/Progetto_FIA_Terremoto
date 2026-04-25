@@ -966,6 +966,74 @@ Ora che abbiamo isolato le 12 "Super Feature", la strada è spianata per la fase
 3) Hyperparameter Tuning: Avviare la ricerca dei parametri ottimali (GridSearch/RandomSearch) sui modelli complessi scelti, sfruttando la velocità garantita dal ridotto numero di dimensioni ottenuto.
 
 
+================================================================================
+Luca - 25/04/2026
+================================================================================
+
+REPORT BREVE - STEPWISE BIDIRECTIONAL SELECTION (FORWARD + BACKWARD)
+
+Obiettivo:
+- Integrare il metodo bidirezionale con la stessa struttura usata per gli altri
+    metodi di subset selection (script principale + script di validazione + output).
+
+Logica implementata (allineata al metodo visto a lezione):
+- Ogni ciclo alterna due fasi:
+    1) Forward step: aggiunge la feature che massimizza lo score.
+    2) Backward step: prova a rimuovere feature gia nel subset.
+- Criterio di accettazione step:
+    uno step viene accettato solo se migliora la metrica oltre la soglia min_improvement.
+- Criterio di stop:
+    l'algoritmo termina quando un intero ciclo forward+backward non produce
+    alcun miglioramento (stop reason: nessun_miglioramento).
+
+File implementati:
+- Feature Selection/subset selection/bidirectional_subset_selection.py
+- Feature Selection/subset selection/validate_bidirectional.py
+
+Output prodotti:
+- Feature Selection/subset selection/outputs/bidirectional_summary.json
+- Feature Selection/subset selection/outputs/bidirectional_history.csv
+- Feature Selection/subset selection/outputs/bidirectional_selected_features.csv
+- Feature Selection/subset selection/outputs/bidirectional_score_history.png
+- Feature Selection/subset selection/outputs/bidirectional_validation_metrics.json
+- Feature Selection/subset selection/outputs/bidirectional_validation_metrics.csv
+
+Impostazione run:
+- Dataset: Data/train_values.csv + Data/train_labels.csv
+- Target: damage_grade
+- One-hot encoding automatico sulle categoriche
+- Estimator: KNN (weights=distance, algorithm=brute)
+- Metrica selection: accuracy
+- Righe utilizzate (campionamento stratificato): 3000 su 260601
+- min_features=1, max_features non impostato, min_improvement=0.0
+
+Risultati selection:
+- Feature iniziali/finali: 68 -> 9
+- Score finale selection: 0.655000
+- Cicli eseguiti: 10
+- Step accettati: 9
+- Stop reason: nessun_miglioramento
+
+Validazione richiesta (accuracy e f1-score):
+- Subset (9 feature):
+    accuracy = 0.655000
+    f1_micro = 0.655000
+- Full features (68 feature):
+    accuracy = 0.533333
+    f1_micro = 0.533333
+- Delta subset - full:
+    accuracy = +0.121667
+    f1_micro = +0.121667
+
+Costo computazionale osservato:
+- Modelli valutati durante la selection: 688
+- Tempo totale selection: 17.61 s
+- Tempo medio per modello: ~0.0256 s/modello
+- Nota metodologica:
+    il bidirectional e in generale piu oneroso di SFS/SBS singoli,
+    perche valuta candidati sia in aggiunta che in rimozione ad ogni ciclo.
+
+
 
 
 
