@@ -2,7 +2,6 @@
 Script principale per il preprocessing dati - Terremoto Nepal 2015
 """
 
-import importlib.util
 import io
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -15,34 +14,6 @@ from DataPreprocessing.validation import DataValidator
 
 
 SHOW_DATA_QUALITY_PLOTS = False
-
-
-def carica_pca_handler():
-    """Carica PCAHandler dal modulo in Feature Selection/Feature Ranking/PCA.py."""
-    module_path = (
-        Path(__file__).resolve().parent
-        / "Feature Selection"
-        / "Feature Ranking"
-        / "PCA.py"
-    )
-
-    if not module_path.exists():
-        raise FileNotFoundError(f"Modulo PCA non trovato: {module_path}")
-
-    spec = importlib.util.spec_from_file_location("feature_selection_feature_ranking_pca", module_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Impossibile caricare il modulo PCA da: {module_path}")
-
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-
-    if not hasattr(module, "PCAHandler"):
-        raise ImportError("Classe 'PCAHandler' non trovata nel modulo PCA.")
-
-    return module.PCAHandler
-
-
-PCAHandler = carica_pca_handler()
 
 def menu_strategia_imputazione_outlier_numerici():
     """
@@ -469,26 +440,9 @@ def main():
         test_values = test_quality_handler.applica_one_hot_encoding(ohe_encoder, COLONNE_CATEGORICHE)
 
     # =======================
-    # PCA
-    # =======================
-    pca_handler = PCAHandler()
-    pca_result = pca_handler.run_interactive_pipeline(
-        train_df=train_values,
-        test_df=test_values,
-        labels_df=train_labels,
-        output_dir="DataPreprocessed",
-        id_columns=["building_id", "geo_level_1_id", "geo_level_2_id", "geo_level_3_id"],
-        target_column="damage_grade",
-    )
-
-    train_values = pca_result["train_transformed"]
-    test_values = pca_result["test_transformed"]
-    df_merged = pca_result["train_with_target"]
-    pca_report = pca_result["report"]
-
-    # =======================
     # MISSING VALUES
     # =======================
+    df_merged = pd.merge(train_values, train_labels, on="building_id")
     handler = MissingValuesHandler(null_threshold=70)
     if solo_log_imputazione:
         report = esegui_silenzioso(handler.analizza, df_merged, target_col="damage_grade")
@@ -497,7 +451,6 @@ def main():
     report["numeric_outlier_imputation"] = imputation_reports
     if "age" in imputation_reports:
         report["age_imputation"] = imputation_reports["age"]
-    report["pca"] = pca_report
 
     best_accuracy_knn = None
     if risultati_knn is not None and not risultati_knn.empty:
