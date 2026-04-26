@@ -1203,6 +1203,74 @@ Costo computazionale osservato:
 
 
 
+================================================================================
+Erika - 26/04/2026
+================================================================================
+
+REPORT BREVE - INTRODUZIONE PATTERN STRATEGY PER IMPUTAZIONE OUTLIER
+
+Obiettivo:
+- Migliorare la struttura del codice nella fase di imputazione delle feature
+    numeriche in cui gli outlier vengono prima sostituiti con valori NaN.
+- Eliminare dal main la selezione esplicita basata su molte condizioni
+    if/elif per scegliere il metodo di imputazione.
+- Rendere piu chiaro che media, mediana, regressione lineare e KNN predictor
+    sono algoritmi alternativi per risolvere lo stesso problema.
+
+File aggiunto:
+- DataPreprocessing/imputation_strategies.py
+
+Pattern implementato:
+- E stata introdotta una interfaccia astratta ImputationStrategy, che definisce
+    il metodo comune imputa(...).
+- Sono state create quattro strategie concrete:
+    1) MeanImputationStrategy
+    2) MedianImputationStrategy
+    3) LinearRegressionImputationStrategy
+    4) KnnImputationStrategy
+- E stato introdotto un ImputationContext, che riceve una strategia e delega
+    a essa l'operazione di imputazione.
+- E stata aggiunta una registry STRATEGIE_IMPUTAZIONE, che associa il codice
+    del menu alla strategia concreta corrispondente.
+
+Perche la scelta è sensata:
+- Il pattern Strategy è adatto quando esistono piu algoritmi intercambiabili
+    che hanno lo stesso obiettivo.
+- In questo caso l'obiettivo e sempre imputare una colonna numerica con valori
+    mancanti generati dalla sostituzione degli outlier; cambia soltanto l'algoritmo usato:
+    media, mediana, regressione lineare o KNN predictor.
+- La scelta della strategia avviene a runtime:
+    tramite menu utente oppure tramite valutazione automatica con KNN veloce.
+- Il main rimane responsabile del flusso generale del preprocessing, mentre
+    la logica specifica degli algoritmi di imputazione viene isolata in un
+    modulo dedicato.
+- Aggiungere una nuova strategia in futuro richiede solo una nuova classe
+    concreta e l'inserimento nella registry, senza modificare la logica
+    principale del workflow.
+
+Dove viene richiamata la Strategy nel main:
+- Import delle strategie:
+    main.py importa da DataPreprocessing.imputation_strategies:
+    STRATEGIE_IMPUTAZIONE,
+    CODICE_STRATEGIA_DA_NOME_REPORT,
+    applica_strategia_imputazione_colonna.
+- Menu di scelta:
+    la funzione menu_strategia_imputazione_outlier_numerici() usa
+    STRATEGIE_IMPUTAZIONE per stampare dinamicamente le strategie disponibili.
+- Scelta automatica:
+    quando l'utente seleziona l'opzione 5, il main valuta le strategie con KNN
+    veloce e poi converte il nome della strategia migliore nel codice menu
+    usando CODICE_STRATEGIA_DA_NOME_REPORT.
+- Applicazione effettiva:
+    nel ciclo sulle colonne outlier, il main richiama
+    applica_strategia_imputazione_colonna(...).
+    Questa funzione seleziona la strategia concreta, crea l'ImputationContext
+    e richiama il metodo imputa_colonna(...).
+
+Risultato:
+- La selezione dell'algoritmo di imputazione non è piu nel main.
+- Il codice è piu estendibile e pulito.
+
 
 
 
