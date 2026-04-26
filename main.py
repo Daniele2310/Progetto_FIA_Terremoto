@@ -11,6 +11,11 @@ from DataPreprocessing.puliziaASCII import PuliziaASCII, COLONNE_CATEGORICHE
 from DataPreprocessing.missingValues import MissingValuesHandler
 from DataPreprocessing.data_cleaning import DataQualityHandler, COLONNE_CONTINUE
 from DataPreprocessing.validation import DataValidator
+from DataPreprocessing.imputation_strategies import (
+    STRATEGIE_IMPUTAZIONE,
+    CODICE_STRATEGIA_DA_NOME_REPORT,
+    applica_strategia_imputazione_colonna,
+)
 
 
 SHOW_DATA_QUALITY_PLOTS = False
@@ -24,10 +29,8 @@ def menu_strategia_imputazione_outlier_numerici():
     print("\n" + "=" * 80)
     print("MENU IMPUTAZIONE FEATURE NUMERICHE OUTLIER")
     print("=" * 80)
-    print("1) Univariata - Media")
-    print("2) Univariata - Mediana")
-    print("3) Multivariata - Regressione lineare")
-    print("4) KNN predictor")
+    for strategia in STRATEGIE_IMPUTAZIONE.values():
+        print(f"{strategia.codice_menu}) {strategia.nome_menu}")
     print("5) Valuta tutte con KNN veloce (accuracy) e scegli la migliore")
 
     try:
@@ -39,39 +42,6 @@ def menu_strategia_imputazione_outlier_numerici():
         scelta = "5"
 
     return scelta
-
-def applica_strategia_imputazione_colonna(missing_handler, train_values, test_values, scelta, colonna):
-    """Applica la strategia selezionata su una colonna e ritorna train/test imputati + report."""
-    if scelta == "1":
-        return missing_handler.imputa_univariata_media(
-            train_df=train_values,
-            test_df=test_values,
-            colonna=colonna,
-        )
-
-    if scelta == "2":
-        return missing_handler.imputa_univariata_mediana(
-            train_df=train_values,
-            test_df=test_values,
-            colonna=colonna,
-        )
-
-    if scelta == "3":
-        return missing_handler.imputa_multivariata_regressione_lineare(
-            train_df=train_values,
-            test_df=test_values,
-            colonna=colonna,
-        )
-
-    if scelta == "4":
-        return missing_handler.imputa_knn_predictor(
-            train_df=train_values,
-            test_df=test_values,
-            colonna=colonna,
-            n_neighbors=5,
-        )
-
-    raise ValueError(f"Scelta strategia non valida: {scelta}")
 
 
 def sostituisci_fuori_bound_con_nan(df, colonna, lower_bound, upper_bound):
@@ -269,13 +239,7 @@ def main():
         strategia_migliore = riepilogo_knn.iloc[0]["strategia"]
         print(f"\nStrategia migliore media per accuracy KNN: {strategia_migliore}")
 
-        mappa_scelta = {
-            "univariata_media": "1",
-            "univariata_mediana": "2",
-            "multivariata_regressione_lineare": "3",
-            "knn_predictor": "4",
-        }
-        scelta_imputazione = mappa_scelta[strategia_migliore]
+        scelta_imputazione = CODICE_STRATEGIA_DA_NOME_REPORT[strategia_migliore]
 
     imputation_reports = {}
     for col in colonne_outlier:
