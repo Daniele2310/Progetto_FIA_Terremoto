@@ -519,6 +519,172 @@ Conclusione sintetica:
 
 
 ================================================================================
+Nicole - 25/04/2026
+================================================================================
+
+REPORT BREVE - SUBSET SELECTION (SFS)
+
+Obiettivo dell'intervento:
+- Aggiungere una tecnica di subset selection forward coerente con SBS e con il
+    metodo bidirectional gia presenti nel progetto.
+- Mantenere il main del progetto separato dalla logica di selezione,
+    concentrando la procedura in uno script dedicato.
+
+File implementato:
+- Feature Selection/subset selection/sfs.py
+
+Definizione operativa usata:
+- SFS = Sequential Forward Selection.
+- E un metodo wrapper bottom-up:
+    parte da zero feature e, a ogni iterazione, aggiunge la feature che produce
+    il miglior score sul modello di valutazione scelto.
+- Il criterio e supervisionato:
+    una feature viene accettata in base all'impatto sulla metrica del modello,
+    non solo in base a una correlazione locale o a una regola filtro.
+
+Procedura implementata:
+- Inizializzazione:
+    subset vuoto.
+- A ogni step:
+    vengono valutate tutte le feature non ancora selezionate;
+    per ciascuna si costruisce un subset candidato = subset corrente + nuova feature.
+- Viene scelta la feature candidata con score migliore.
+- Lo step viene accettato e registrato nella history solo se lo score aumenta
+    davvero rispetto al subset precedente.
+- L'algoritmo si arresta quando:
+    1) raggiunge max_features;
+    2) la migliore feature rimasta non aumenta piu lo score
+       (stop_reason = score_non_in_aumento);
+    3) se viene impostata una soglia opzionale, il miglioramento e inferiore a
+       min_improvement
+       (stop_reason = miglioramento_insufficiente);
+    4) si raggiunge l'eventuale limite max_steps.
+
+Ruolo dello score:
+- Lo score rappresenta la prestazione del modello usato per valutare il subset.
+- Nel file attuale le metriche supportate sono:
+    accuracy e f1_micro.
+- A ogni step lo script confronta:
+    score_before, score_after e delta_score,
+    in modo da rendere leggibile quanto l'aggiunta di una feature migliori
+    davvero il subset corrente.
+
+Nota metodologica importante:
+- Come per SBS, e presente l'effetto di nesting:
+    una feature aggiunta in uno step non viene piu rimossa nei successivi.
+- Questo distingue SFS dal metodo bidirectional, che invece puo alternare
+    aggiunte e rimozioni.
+- La logica di stop e stata resa coerente con SBS:
+    prima si applica la regola standard del metodo
+    (si continua solo se la prestazione migliora),
+    poi si puo applicare una soglia opzionale piu severa tramite
+    min_improvement.
+
+Preprocessing applicato nello script:
+- Caricamento dataset di default da:
+    Data/train_values.csv + Data/train_labels.csv
+    oppure, se disponibile, da:
+    DataPreprocessed/train_features_labels_preprocessed.csv
+    oppure da CSV passato via --input.
+- Merge tra feature e target sul building_id quando si usano i file originali.
+- Esclusione delle colonne indicate in --exclude-columns
+    (default: building_id, damage_grade).
+- One-hot encoding automatico delle feature categoriche.
+- Controllo esplicito di assenza di valori NaN prima della selezione.
+
+Ruolo dell'holdout interno:
+- Lo script costruisce uno split train/holdout stratificato per stimare lo
+    score durante la selezione.
+- Questo holdout non sostituisce la validazione esterna del progetto:
+    serve solo a decidere, all'interno di SFS, se una nuova feature migliora o
+    meno il subset corrente.
+
+Modelli supportati per la valutazione dei subset:
+- LogisticRegression
+- KNeighborsClassifier
+
+Metriche supportate:
+- accuracy
+- f1_micro
+
+Output finali prodotti:
+- Feature Selection/subset selection/outputs/sfs_history.csv
+- Feature Selection/subset selection/outputs/sfs_selected_features.csv
+- Feature Selection/subset selection/outputs/sfs_summary.json
+- Feature Selection/subset selection/outputs/sfs_score_history.png
+
+Contenuto degli output:
+- sfs_history.csv:
+    storia completa degli step accettati con:
+    step, n_features_before, n_features_after, added_feature,
+    score_before, score_after, delta_score.
+- sfs_selected_features.csv:
+    elenco finale delle feature selezionate in ordine di ingresso nel subset.
+- sfs_summary.json:
+    riepilogo della run con numero righe usate, numero feature iniziali/finali,
+    modelli valutati, tempo totale, stop reason e nota di complessita.
+- sfs_score_history.png:
+    andamento dello score al crescere del numero di feature selezionate.
+
+Come verificare il funzionamento:
+- Esecuzione standard:
+    python "Feature Selection\subset selection\sfs.py"
+- Esecuzione con numero massimo di feature piu piccolo:
+    python "Feature Selection\subset selection\sfs.py" --max-features 10
+- Esecuzione con KNN come estimator:
+    python "Feature Selection\subset selection\sfs.py" --estimator knn
+- Esecuzione con metrica F1 micro:
+    python "Feature Selection\subset selection\sfs.py" --scoring f1_micro
+
+Controlli di correttezza consigliati:
+- Verificare che in sfs_history.csv ogni step aumenti il numero di feature di 1.
+- Verificare che in sfs_selected_features.csv non compaiano duplicati.
+- Verificare che il summary riporti coerentemente:
+    n_features_initial, n_features_final, evaluated_models e stop_reason.
+- Verificare che, con min_improvement = 0.0, l'algoritmo prosegua finche lo
+    score cresce e si arresti appena la migliore aggiunta non produce piu un
+    aumento reale.
+
+Considerazioni pratiche emerse dai test:
+- Nelle prime versioni la soglia min_improvement influenzava molto il numero di
+    feature finali e poteva fermare l'algoritmo troppo presto
+    (per esempio a 4 feature).
+- Dopo l'allineamento con SBS, il comportamento e piu coerente:
+    la selezione non si interrompe piu per una soglia implicita, ma continua
+    finche lo score aumenta davvero.
+- In una run di prova successiva all'allineamento, SFS ha selezionato 7
+    feature:
+    age, area_percentage, has_superstructure_stone_flag,
+    has_superstructure_rc_engineered, foundation_type_h,
+    foundation_type_i e roof_type_x.
+- Questo risultato e stato considerato piu credibile dei precedenti output con
+    2 o 4 feature, perche riflette un arresto dovuto al mancato aumento dello
+    score e non a una soglia troppo severa.
+- Valori molto piccoli di min_improvement, come 0.0001, restano comunque
+    permissivi:
+    possono far entrare feature con miglioramenti minimi ma reali.
+- Se viene impostato min_improvement > 0, controllare che l'arresto avvenga
+    quando la migliore aggiunta non supera la soglia richiesta.
+
+Costo computazionale:
+- Anche SFS ha costo elevato:
+    in una run completa valuta un numero di modelli di ordine O(p^2)
+    rispetto al numero di feature candidate.
+- Per contenere il costo sono stati mantenuti:
+    campionamento opzionale tramite max_rows,
+    limite massimo di feature,
+    e limite massimo di step.
+
+Relazione con gli altri metodi presenti nel progetto:
+- SFS:
+    costruisce il subset in avanti.
+- SBS:
+    parte dal set completo e rimuove feature.
+- Bidirectional:
+    combina step forward e backward in modo alternato.
+
+
+================================================================================
 Erika - 23/04/2026 (primo aggiornamento)
 ================================================================================
 
