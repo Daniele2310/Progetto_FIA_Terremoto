@@ -1378,12 +1378,6 @@ Raccomandazioni finali:
   Questi metodi, pur non offrendo garanzie di ottimalità globale, rimangono
   computazionalmente fattibili e danno risultati robusti su questo dataset.
 
-- Per future ricerche di feature selection su problemi con violazione di monotonia,
-  considerare:
-    - Metodi di feature importance model-based (Permutation Importance, SHAP).
-    - Tecniche di ensemble che pesano la rilevanza di ogni feature indipendentemente.
-    - Cross-validation stratificata per mitigare instabilità associate a feature
-      poco rilevanti o redundanti.
 
 Output dello script test_monotonia_fast.py:
 
@@ -1396,21 +1390,11 @@ Output dello script test_monotonia_fast.py:
   Trial: 20
   
   RISULTATI:
-  Accuracy:
-    Test eseguiti: 20
-    Violazioni: 8
-    Conformità: 60.0%
-  
   F1-Micro:
     Test eseguiti: 20
     Violazioni: 8
     Conformità: 60.0%
   
-  CONCLUSIONE PER BRANCH-AND-BOUND:
-  ✗ IPOTESI DI MONOTONIA NON RISPETTATA
-    → Il branch-and-bound NON È APPLICABILE
-    → Preferite SFS, SBS o algoritmi euristici alternativi
-    → Il problema ha caratteristiche non-convesse
 
 File test implementato:
 - Feature Selection/test_monotonia_fast.py
