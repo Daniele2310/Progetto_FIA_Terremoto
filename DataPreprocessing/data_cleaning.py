@@ -50,8 +50,17 @@ class DataQualityHandler:
         print(f"\nNumero di building_id duplicati: {num_duplicati}")
         return num_duplicati
 
-    def analizza_outlier(self, colonne=COLONNE_CONTINUE):
-        """Analizza gli outlier nelle colonne selezionate usando il metodo IQR."""
+    def analizza_outlier(self, colonne=COLONNE_CONTINUE, k=3.0):
+        """Analizza gli outlier nelle colonne selezionate usando il metodo IQR.
+
+        Parametri
+        ----------
+        colonne : list[str]
+            Colonne su cui eseguire l'analisi.
+        k : float, default=3.0
+            Moltiplicatore IQR per definire i bound.
+            Valori tipici: 1.5 (Tukey standard), 3.0 (Extreme IQR).
+        """
         outliers_summary = {}
 
         for col in colonne:
@@ -83,12 +92,10 @@ class DataQualityHandler:
                 lower = valori_normali.min()
                 upper = valori_normali.max()
             else:
-                # Usiamo 3.0 (Extreme IQR) invece di 1.5 per le distribuzioni asimmetriche fisiche
-                # in alternativa, potresti mantenere 1.5 ma calcolarlo su np.log1p(valid_data)
-                lower = Q1 - 3.0 * IQR
-                upper = Q3 + 3.0 * IQR
-                # lower = Q1 - 1.5 * IQR
-                # upper = Q3 + 1.5 * IQR
+                # Usiamo k * IQR per definire i bound
+                # k=1.5 è lo standard di Tukey, k=3.0 è l'Extreme IQR
+                lower = Q1 - k * IQR
+                upper = Q3 + k * IQR
 
                 lower = max(0, lower)
                 mask_outliers = (self.data[col] < lower) | (self.data[col] > upper)
