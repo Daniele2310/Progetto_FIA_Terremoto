@@ -1410,3 +1410,85 @@ Script di riferimento per verifica futura:
 
 
 
+================================================================================
+Luca - 27/04/2026
+================================================================================
+
+REPORT BREVE - ANALISI SPERIMENTALE MOLTIPLICATORE IQR PER OUTLIER DETECTION
+
+Obiettivo dell'intervento:
+- Verificare se il moltiplicatore IQR attualmente in uso (k=3.0, Extreme IQR)
+    e il valore ottimale oppure se conviene usare un k diverso.
+- Valutare l'impatto di diversi valori di k sulla classificazione finale.
+
+Contesto:
+- Il metodo IQR calcola i bound come:
+    lower = Q1 - k * IQR,  upper = Q3 + k * IQR
+- k=1.5 e lo standard di Tukey (usato da tutti i boxplot).
+- k=3.0 (Extreme IQR) e piu conservativo: rileva solo outlier molto estremi.
+- Feature analizzate: count_floors_pre_eq, age, area_percentage,
+    height_percentage, count_families.
+
+Modifiche al codice:
+- data_cleaning.py: il metodo analizza_outlier() ora accetta un parametro
+    k (default=3.0) invece di avere il moltiplicatore hardcodato.
+    Retrocompatibilita garantita: senza specificare k si ottiene lo stesso
+    comportamento di prima.
+- Creata cartella DataPreprocessing/OutlierDetection/ con __init__.py per
+    raccogliere gli script di analisi outlier.
+
+File implementato:
+- DataPreprocessing/OutlierDetection/outlier_k_comparison.py
+
+Procedura sperimentale:
+- Per ogni k in {1.5, 2.0, 2.5, 3.0, 4.0}:
+    1) Analisi outlier con quel moltiplicatore sulle 5 feature continue.
+    2) Sostituzione degli outlier rilevati con NaN.
+    3) Imputazione con mediana (strategia neutra per confronto equo).
+    4) Addestramento KNN classifier veloce su campione di 25.000 righe.
+    5) Misurazione di accuracy e F1-micro su holdout 80/20 stratificato.
+- Classificatore: KNeighborsClassifier (n_neighbors=5, weights=distance,
+    algorithm=brute).
+- Preprocessing per la valutazione: one-hot encoding, StandardScaler,
+    fillna con mediane del train.
+
+Risultati osservati:
+
+    k    n_outlier_totali  accuracy  f1_micro
+  1.5           34677      0.5788    0.5788
+  2.0           21992      0.5814    0.5814
+  2.5           14589      0.5840    0.5840
+  3.0           10052      0.5868    0.5868
+  4.0            5339      0.5816    0.5816
+
+Dettaglio outlier per feature (k=3.0 vs k=1.5):
+- count_floors_pre_eq:  250 outlier (invariato, IQR=0 -> soglia rarita)
+- age:                 3902 (k=3.0) vs 12499 (k=1.5)
+- area_percentage:     3845 (k=3.0) vs 13557 (k=1.5)
+- height_percentage:   1527 (k=3.0) vs  7843 (k=1.5)
+- count_families:       528 (invariato, IQR=0 -> soglia rarita)
+
+Andamento osservato:
+- L'accuracy segue un andamento a campana rispetto a k.
+- k troppo basso (1.5): troppi outlier rimossi, si perde informazione utile,
+    l'accuracy cala.
+- k=3.0: punto ottimale, rimuove solo gli outlier genuini senza sacrificare
+    dati validi.
+- k troppo alto (4.0): troppo conservativo, lascia passare outlier che
+    disturbano il modello, l'accuracy cala.
+
+Conclusione:
+- Il valore k=3.0 (Extreme IQR), gia in uso nella pipeline, risulta il
+    migliore tra quelli testati con F1-micro = 0.5868.
+- Non e necessario modificare il moltiplicatore IQR attuale.
+- L'analisi conferma che la scelta iniziale del moltiplicatore era gia ben
+    calibrata per questo dataset.
+
+Output salvati:
+- DataPreprocessing/OutlierDetection/outputs/outlier_k_comparison_results.csv
+
+Script di riferimento per verifica futura:
+- Esecuzione standard:
+    python DataPreprocessing/OutlierDetection/outlier_k_comparison.py
+
+
