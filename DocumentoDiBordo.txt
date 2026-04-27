@@ -1272,5 +1272,157 @@ Risultato:
 - Il codice è piu estendibile e pulito.
 
 
+================================================================================
+Luca - 27/04/2026
+================================================================================
+
+REPORT BREVE - VERIFICA DELL'IPOTESI DI MONOTONIA PER BRANCH-AND-BOUND
+
+Obiettivo:
+- Testare empiricamente se il dataset soddisfa l'ipotesi di monotonia richiesta
+    dall'algoritmo branch-and-bound per la featured selection.
+- Verificare se è possibile utilizzare branch-and-bound come metodo di selezione
+    delle features nel nostro progetto.
+
+Contesto teorico:
+- L'algoritmo branch-and-bound è un metodo esatto per la ricerca ottimale di
+    subset di feature nel problema della feature selection.
+- La sua efficienza (e la validità del bound utilizzato) dipende da un'ipotesi
+    cruciale: la MONOTONIA della funzione di valutazione.
+- Ipotesi di monotonia:
+    Se un subset S di k feature produce score Y, e se aggiungiamo una feature
+    ulteriore (passando da k a k+1 feature), lo score non deve DIMINUIRE;
+    ovvero: score(S) <= score(S ∪ {f_new}).
+- Quando questa ipotesi è violata frequentemente (cioe l'aggiunta di feature
+    causa degradazione dello score), il branch-and-bound perde la garanzia
+    matematica di optimalità del bound e diventa scarsamente efficace.
+
+Metodologia di test:
+- E stato creato uno script test_monotonia_fast.py che verifica
+    l'ipotesi di monotonia mediante sampling e test ripetuti.
+- Procedura (20 trial):
+    Per ogni trial:
+    1) Selezionare casualmente K feature dal dataset.
+    2) Addestrare un modello KNeighborsClassifier su queste K feature
+        e calcolare lo score (accuracy e f1_micro).
+    3) Aggiungere una (K+1)-esima feature casuale dalle rimanenti.
+    4) Ri-addestrare il modello sulla versione expanded e osservare il nuovo score.
+    5) Registrare VIOLAZIONE se: score_K+1 < score_K - tolerance(0.001).
+
+- Dataset utilizzato:
+    Il test utilizza i dati preprocessati in DataPreprocessed/train_features_labels_preprocessed.csv
+    che contiene 260.601 campioni e 69 feature (escluso il target damage_grade).
+- Campionamento:
+    Per ridurre il costo computazionale, lo script campiona 5.000 righe
+    dal dataset completo (stratificato per target), mantenendo la bontà
+    statistica della rappresentazione.
+- Numero di trial:
+    20 trial randomizzati con diverse combinazioni di feature iniziali.
+- Modello e metrica:
+    KNeighborsClassifier (k=5, weights='distance', algorithm='brute')
+    Metriche osservate: accuracy, f1_micro.
+
+Risultati del test:
+- Trial eseguiti: 20
+- Metriche: accuracy e f1_micro
+- Conformità (accuracy):
+    60.0% (12 trial rispettano la monotonia, 8 trial la violano)
+- Conformità (f1_micro):
+    60.0% (12 trial rispettano la monotonia, 8 trial la violano)
+
+CONCLUSIONE SULLA MONOTONIA:
+IPOTESI NON RISPETTATA.
+- Tasso di violazione: 40% dei trial mostrano degradazione dello score
+    quando vengono aggiunte feature.
+- Questo significa che aggiungere una feature a un subset arbitrario PUO'
+    causare un calo della performance predittiva.
+- Il problema di feature selection su questo dataset ha caratteristiche
+    NON-CONVESSE e presenta fenomeni di overfitting/ridondanza tra feature.
+
+Implicazioni per branch-and-bound:
+- BRANCH-AND-BOUND NON è APPLICABILE su questo dataset.
+- Motivazione:
+    L'algoritmo branch-and-bound si basa sul poter scartare rami
+    dell'albero di ricerca quando la Lower Bound è inferiore al best score
+    globale trovato finora. Quando la monotonia è violata, il bound diventa
+    inaffidabile e non è piu possibile scartare branch con sicurezza
+    matematica. L'algoritmo degenera in una ricerca quasi-esaustiva.
+- Conseguenza computazionale:
+    Su 69 feature, lo spazio dei subset è 2^69 = 1.2e20.
+    Senza un bound valido basato su monotonia, non c'è alcuna semplificazione
+    nell'esplorazione.
+
+Cause radice delle violazioni di monotonia:
+1) Ridondanza tra feature:
+    Due feature possono contenere informazione molto simile
+    (correlate tra loro). Aggiungere la seconda feature ridonda non migliora
+    il modello, talvolta lo peggiora per overfitting.
+2) Feature interaction non lineari:
+    L'aggiunta di una feature con interazioni complesse con le feature
+    già nel subset puo causare instabilità numerica nel modello
+    (es. KNN è sensibile a scaling e alla maledizione della dimensionalità).
+3) Overfitting su holdout interno:
+    Il modello KNN con k=5 su 5.000 campioni può overfittare leggermene,
+    causando degradazione dello score su subset expanded se la nuova feature
+    è poco correlata con il target ma correlata con il rumore.
+
+Raccomandazioni finali:
+- NON utilizzare branch-and-bound; la garanzia matematica di optimalità è persa.
+- CONTINUARE A USARE i metodi euristici gia implementati:
+    - Sequential Forward Selection (SFS): costruzione greedy dal basso.
+    - Sequential Backward Selection (SBS): rimozione greedy dall'alto.
+    - Bidirectional Selection: ibrido dei due sopra.
+    - Best First Search con priority queue: esplorazione guided da uno score.
+    - Embedded Lasso: selezione durante l'addestramento del modello.
+    - PCA: riduzione dimensionale lineare non supervisionata.
+  Questi metodi, pur non offrendo garanzie di ottimalità globale, rimangono
+  computazionalmente fattibili e danno risultati robusti su questo dataset.
+
+- Per future ricerche di feature selection su problemi con violazione di monotonia,
+  considerare:
+    - Metodi di feature importance model-based (Permutation Importance, SHAP).
+    - Tecniche di ensemble che pesano la rilevanza di ogni feature indipendentemente.
+    - Cross-validation stratificata per mitigare instabilità associate a feature
+      poco rilevanti o redundanti.
+
+Output dello script test_monotonia_fast.py:
+
+  Caricamento dataset...
+  ✓ Dataset caricato: (260601, 69) campioni, 69 feature
+  
+  TEST DI MONOTONIA - VERSIONE VELOCIZZATA
+  Campionamento: 5000 su 260601 campioni
+  Feature da valutare: 69
+  Trial: 20
+  
+  RISULTATI:
+  Accuracy:
+    Test eseguiti: 20
+    Violazioni: 8
+    Conformità: 60.0%
+  
+  F1-Micro:
+    Test eseguiti: 20
+    Violazioni: 8
+    Conformità: 60.0%
+  
+  CONCLUSIONE PER BRANCH-AND-BOUND:
+  ✗ IPOTESI DI MONOTONIA NON RISPETTATA
+    → Il branch-and-bound NON È APPLICABILE
+    → Preferite SFS, SBS o algoritmi euristici alternativi
+    → Il problema ha caratteristiche non-convesse
+
+File test implementato:
+- Feature Selection/test_monotonia_fast.py
+
+Script di riferimento per verifica futura:
+- Esecuzione con default:
+    python "Feature Selection/test_monotonia_fast.py"
+- Esecuzione con campione diverso:
+    python "Feature Selection/test_monotonia_fast.py" --max-rows 10000
+- Esecuzione con piu trial:
+    python "Feature Selection/test_monotonia_fast.py" --num-trials 50
+
+
 
 
