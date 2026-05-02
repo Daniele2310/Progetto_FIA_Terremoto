@@ -1,6 +1,0 @@
-k,n_outlier_totali,accuracy,f1_micro,n_campioni_train,n_campioni_val,n_features,outlier_count_floors_pre_eq,outlier_age,outlier_area_percentage,outlier_height_percentage,outlier_count_families
-1.5,34677,0.5788,0.5788,20000,5000,76,250,12499,13557,7843,528
-2.0,21992,0.5814,0.5814,20000,5000,76,250,9401,8462,3351,528
-2.5,14589,0.584,0.584,20000,5000,76,250,5834,5543,2434,528
-3.0,10052,0.5868,0.5868,20000,5000,76,250,3902,3845,1527,528
-4.0,5339,0.5816,0.5816,20000,5000,76,250,1935,1924,702,528

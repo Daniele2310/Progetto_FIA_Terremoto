@@ -1,5 +1,6 @@
 # Ambienti virtuali
 venv/
+.venv/
 env/
 ENV/
 
@@ -40,7 +41,7 @@ Thumbs.db
 
 # Specifico del progetto
 *.csv.bak
-DataPreprocessed/*
-!DataPreprocessed/.gitkeep
-Feature Selection/subset selection/outputs/
-Feature Selection/Embedded/outputs/
+data/*
+!data/.gitkeep
+outputs/*
+!outputs/.gitkeep

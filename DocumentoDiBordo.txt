@@ -263,7 +263,7 @@ INTEGRAZIONE PIPELINE IMPUTAZIONE AGE CON MENU
 - Mantenuta la regola di pulizia: valori age in [250, 995] convertiti in NaN prima dell'imputazione.
 - Salvato report di imputazione nel report finale con chiave age_imputation.
 
-Funzioni implementate in DataPreprocessing/missingValues.py:
+Funzioni implementate in src.preprocessing/missing_values.py:
 - imputa_univariata_media(...)
 - imputa_univariata_mediana(...)
 - imputa_multivariata_regressione_lineare(...)
@@ -298,9 +298,9 @@ Luca - 21/04/2026
 REPORT BREVE - FEATURE RANKING PAIR-WISE (PEARSON, SENZA PCA)
 
 Sorgente risultati:
-- Feature Selection/feature ranking/outputs/pairwise_ranking.csv
-- Feature Selection/feature ranking/outputs/top_pairwise_correlated_pairs.csv
-- Feature Selection/feature ranking/outputs/supervised_ranking.csv
+- src.feature_selection/feature ranking/outputs/pairwise_ranking.csv
+- src.feature_selection/feature ranking/outputs/top_pairwise_correlated_pairs.csv
+- src.feature_selection/feature ranking/outputs/supervised_ranking.csv
 
 Nota sul preprocessing per questa analisi:
 - Analisi eseguita su feature originali (train_values + train_labels), senza componenti PCA.
@@ -366,8 +366,8 @@ Definizione usata:
 - Metodo applicato solo a feature discrete.
 
 Sorgente risultati:
-- Feature Selection/feature ranking/outputs/uncertainty_information_gain_ranking.csv
-- Feature Selection/feature ranking/outputs/uncertainty_summary.json
+- src.feature_selection/feature ranking/outputs/uncertainty_information_gain_ranking.csv
+- src.feature_selection/feature ranking/outputs/uncertainty_summary.json
 
 Impostazione run:
 - Dataset: Data/train_values.csv + Data/train_labels.csv
@@ -418,10 +418,10 @@ Definizione operativa usata:
     e a differire tra campioni di classi diverse.
 
 Sorgente risultati:
-- Feature Selection/feature ranking/outputs/relief_ranking.csv
-- Feature Selection/feature ranking/outputs/relief_summary.csv
-- Feature Selection/feature ranking/outputs/relief_top_features.csv
-- Feature Selection/feature ranking/outputs/relief_top_features.png
+- src.feature_selection/feature ranking/outputs/relief_ranking.csv
+- src.feature_selection/feature ranking/outputs/relief_summary.csv
+- src.feature_selection/feature ranking/outputs/relief_top_features.csv
+- src.feature_selection/feature ranking/outputs/relief_top_features.png
 
 Impostazione run:
 - Dataset: Data/train_values.csv + Data/train_labels.csv
@@ -531,7 +531,7 @@ Obiettivo dell'intervento:
     concentrando la procedura in uno script dedicato.
 
 File implementato:
-- Feature Selection/subset selection/sfs.py
+- src.feature_selection/subset selection/sfs.py
 
 Definizione operativa usata:
 - SFS = Sequential Forward Selection.
@@ -608,10 +608,10 @@ Metriche supportate:
 - f1_micro
 
 Output finali prodotti:
-- Feature Selection/subset selection/outputs/sfs_history.csv
-- Feature Selection/subset selection/outputs/sfs_selected_features.csv
-- Feature Selection/subset selection/outputs/sfs_summary.json
-- Feature Selection/subset selection/outputs/sfs_score_history.png
+- src.feature_selection/subset selection/outputs/sfs_history.csv
+- src.feature_selection/subset selection/outputs/sfs_selected_features.csv
+- src.feature_selection/subset selection/outputs/sfs_summary.json
+- src.feature_selection/subset selection/outputs/sfs_score_history.png
 
 Contenuto degli output:
 - sfs_history.csv:
@@ -628,13 +628,13 @@ Contenuto degli output:
 
 Come verificare il funzionamento:
 - Esecuzione standard:
-    python "Feature Selection\subset selection\sfs.py"
+    python "src.feature_selection\subset selection\sfs.py"
 - Esecuzione con numero massimo di feature piu piccolo:
-    python "Feature Selection\subset selection\sfs.py" --max-features 10
+    python "src.feature_selection\subset selection\sfs.py" --max-features 10
 - Esecuzione con KNN come estimator:
-    python "Feature Selection\subset selection\sfs.py" --estimator knn
+    python "src.feature_selection\subset selection\sfs.py" --estimator knn
 - Esecuzione con metrica F1 micro:
-    python "Feature Selection\subset selection\sfs.py" --scoring f1_micro
+    python "src.feature_selection\subset selection\sfs.py" --scoring f1_micro
 
 Controlli di correttezza consigliati:
 - Verificare che in sfs_history.csv ogni step aumenti il numero di feature di 1.
@@ -698,7 +698,7 @@ Obiettivo dell'intervento:
     2) poco ridondanti rispetto alle feature gia selezionate.
 
 File implementato:
-- Feature Selection/subset selection/max_min_subset_selection.py
+- src.feature_selection/subset selection/max_min_subset_selection.py
 
 Definizione operativa usata:
 - Score(feature) = rilevanza(feature, target) - ridondanza(feature, selected_set)
@@ -729,9 +729,9 @@ Preprocessing applicato nello script:
 - Controllo di assenza di valori NaN prima dell'esecuzione del metodo.
 
 Output finali prodotti:
-- Feature Selection/subset selection/outputs/max_min_selected_features.csv
-- Feature Selection/subset selection/outputs/max_min_feature_correlation_matrix.csv
-- Feature Selection/subset selection/outputs/max_min_summary.json
+- src.feature_selection/subset selection/outputs/max_min_selected_features.csv
+- src.feature_selection/subset selection/outputs/max_min_feature_correlation_matrix.csv
+- src.feature_selection/subset selection/outputs/max_min_summary.json
 
 Contenuto degli output:
 - max_min_selected_features.csv:
@@ -746,11 +746,11 @@ Contenuto degli output:
 
 Come verificare il funzionamento:
 - Esecuzione standard con stop automatico su score negativo:
-    python "Feature Selection\subset selection\max_min_subset_selection.py"
+    python "src.feature_selection\subset selection\max_min_subset_selection.py"
 - Esecuzione con limite massimo di feature:
-    python "Feature Selection\subset selection\max_min_subset_selection.py" --max-features 15
+    python "src.feature_selection\subset selection\max_min_subset_selection.py" --max-features 15
 - Esecuzione senza stop su score negativo, utile per confronti con cardinalita fissa:
-    python "Feature Selection\subset selection\max_min_subset_selection.py" --disable-negative-stop --max-features 15
+    python "src.feature_selection\subset selection\max_min_subset_selection.py" --disable-negative-stop --max-features 15
 
 Controlli di correttezza consigliati:
 - Verificare che in max_min_selected_features.csv:
@@ -798,7 +798,7 @@ Obiettivo dell'intervento:
     seguendo l'idea vista a lezione per i metodi embedded con regolarizzazione L1.
 
 File implementato:
-- Feature Selection/Embedded/lasso_feature_selection.py
+- src.feature_selection/Embedded/lasso_feature_selection.py
 
 Idea metodologica:
 - Il Lasso minimizza una loss con un termine di penalizzazione L1 sui coefficienti:
@@ -872,9 +872,9 @@ Preprocessing applicato nello script:
 - Standardizzazione delle feature prima del fit del Lasso.
 
 Output finali prodotti:
-- Feature Selection/Embedded/outputs/lasso_selected_features.csv
-- Feature Selection/Embedded/outputs/lasso_all_coefficients.csv
-- Feature Selection/Embedded/outputs/lasso_summary.json
+- src.feature_selection/Embedded/outputs/lasso_selected_features.csv
+- src.feature_selection/Embedded/outputs/lasso_all_coefficients.csv
+- src.feature_selection/Embedded/outputs/lasso_summary.json
 
 Contenuto degli output:
 - lasso_selected_features.csv:
@@ -888,11 +888,11 @@ Contenuto degli output:
 
 Come verificare il funzionamento:
 - Esecuzione standard con scelta alpha via menu:
-    python "Feature Selection\Embedded\lasso_feature_selection.py"
+    python "src.feature_selection\Embedded\lasso_feature_selection.py"
 - Esecuzione con alpha fisso da CLI:
-    python "Feature Selection\Embedded\lasso_feature_selection.py" --alpha 0.002
+    python "src.feature_selection\Embedded\lasso_feature_selection.py" --alpha 0.002
 - Esecuzione con diverso numero di fold per LassoCV:
-    python "Feature Selection\Embedded\lasso_feature_selection.py" --cv-folds 10
+    python "src.feature_selection\Embedded\lasso_feature_selection.py" --cv-folds 10
 
 
 Risultati osservati nella prima run con scelta automatica (LassoCV):
@@ -941,7 +941,7 @@ Scelte implementative adottate:
 - Il blocco PCA nel main.py e stato ridotto al minimo indispensabile:
     creazione del PCAHandler, chiamata alla pipeline PCA e recupero dei risultati.
 - La logica principale della PCA e stata concentrata in:
-    Feature Selection/Feature Ranking/PCA.py
+    src.feature_selection/Feature Ranking/PCA.py
 - Lo scree plot e stato mantenuto come unico grafico di supporto per la scelta
     del numero di componenti.
 - La scelta finale di n_components avviene manualmente dopo la visualizzazione
@@ -993,7 +993,7 @@ Output prodotti dalla pipeline PCA:
 - DataPreprocessed/train_features_labels_preprocessed.csv
 
 Correzione aggiuntiva collegata al preprocessing:
-- In DataPreprocessing/missingValues.py e stata corretta la fase di valutazione
+- In src.preprocessing/missing_values.py e stata corretta la fase di valutazione
     KNN veloce delle strategie di imputazione.
 - Problema risolto:
     il KNeighborsClassifier andava in errore per la presenza di NaN residui
@@ -1153,16 +1153,16 @@ Logica implementata (allineata al metodo visto a lezione):
     alcun miglioramento (stop reason: nessun_miglioramento).
 
 File implementati:
-- Feature Selection/subset selection/bidirectional_subset_selection.py
-- Feature Selection/subset selection/validate_bidirectional.py
+- src.feature_selection/subset selection/bidirectional_subset_selection.py
+- src.feature_selection/subset selection/validate_bidirectional.py
 
 Output prodotti:
-- Feature Selection/subset selection/outputs/bidirectional_summary.json
-- Feature Selection/subset selection/outputs/bidirectional_history.csv
-- Feature Selection/subset selection/outputs/bidirectional_selected_features.csv
-- Feature Selection/subset selection/outputs/bidirectional_score_history.png
-- Feature Selection/subset selection/outputs/bidirectional_validation_metrics.json
-- Feature Selection/subset selection/outputs/bidirectional_validation_metrics.csv
+- src.feature_selection/subset selection/outputs/bidirectional_summary.json
+- src.feature_selection/subset selection/outputs/bidirectional_history.csv
+- src.feature_selection/subset selection/outputs/bidirectional_selected_features.csv
+- src.feature_selection/subset selection/outputs/bidirectional_score_history.png
+- src.feature_selection/subset selection/outputs/bidirectional_validation_metrics.json
+- src.feature_selection/subset selection/outputs/bidirectional_validation_metrics.csv
 
 Impostazione run:
 - Dataset: Data/train_values.csv + Data/train_labels.csv
@@ -1218,7 +1218,7 @@ Obiettivo:
     sono algoritmi alternativi per risolvere lo stesso problema.
 
 File aggiunto:
-- DataPreprocessing/imputation_strategies.py
+- src.preprocessing/imputation_strategies.py
 
 Pattern implementato:
 - E stata introdotta una interfaccia astratta ImputationStrategy, che definisce
@@ -1250,7 +1250,7 @@ Perche la scelta è sensata:
 
 Dove viene richiamata la Strategy nel main:
 - Import delle strategie:
-    main.py importa da DataPreprocessing.imputation_strategies:
+    main.py importa da src.preprocessing.imputation_strategies:
     STRATEGIE_IMPUTAZIONE,
     CODICE_STRATEGIA_DA_NOME_REPORT,
     applica_strategia_imputazione_colonna.
@@ -1397,15 +1397,15 @@ Output dello script test_monotonia_fast.py:
   
 
 File test implementato:
-- Feature Selection/test_monotonia_fast.py
+- src.feature_selection/test_monotonia_fast.py
 
 Script di riferimento per verifica futura:
 - Esecuzione con default:
-    python "Feature Selection/test_monotonia_fast.py"
+    python "src.feature_selection/test_monotonia_fast.py"
 - Esecuzione con campione diverso:
-    python "Feature Selection/test_monotonia_fast.py" --max-rows 10000
+    python "src.feature_selection/test_monotonia_fast.py" --max-rows 10000
 - Esecuzione con piu trial:
-    python "Feature Selection/test_monotonia_fast.py" --num-trials 50
+    python "src.feature_selection/test_monotonia_fast.py" --num-trials 50
 
 
 
@@ -1434,11 +1434,11 @@ Modifiche al codice:
     k (default=3.0) invece di avere il moltiplicatore hardcodato.
     Retrocompatibilita garantita: senza specificare k si ottiene lo stesso
     comportamento di prima.
-- Creata cartella DataPreprocessing/OutlierDetection/ con __init__.py per
+- Creata cartella src.preprocessing/outlier_detection/ con __init__.py per
     raccogliere gli script di analisi outlier.
 
 File implementato:
-- DataPreprocessing/OutlierDetection/outlier_k_comparison.py
+- src.preprocessing/outlier_detection/outlier_k_comparison.py
 
 Procedura sperimentale:
 - Per ogni k in {1.5, 2.0, 2.5, 3.0, 4.0}:
@@ -1485,10 +1485,10 @@ Conclusione:
     calibrata per questo dataset.
 
 Output salvati:
-- DataPreprocessing/OutlierDetection/outputs/outlier_k_comparison_results.csv
+- src.preprocessing/outputs/tables/outlier_k_comparison_results.csv
 
 Script di riferimento per verifica futura:
 - Esecuzione standard:
-    python DataPreprocessing/OutlierDetection/outlier_k_comparison.py
+    python src.preprocessing/outlier_detection/outlier_k_comparison.py
 
 

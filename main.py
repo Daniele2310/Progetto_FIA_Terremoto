@@ -7,11 +7,11 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 import pandas as pd
-from DataPreprocessing.puliziaASCII import PuliziaASCII, COLONNE_CATEGORICHE
-from DataPreprocessing.missingValues import MissingValuesHandler
-from DataPreprocessing.data_cleaning import DataQualityHandler, COLONNE_CONTINUE
-from DataPreprocessing.validation import DataValidator
-from DataPreprocessing.imputation_strategies import (
+from src.preprocessing.clean_ascii import PuliziaASCII, COLONNE_CATEGORICHE
+from src.preprocessing.missing_values import MissingValuesHandler
+from src.preprocessing.data_cleaning import DataQualityHandler, COLONNE_CONTINUE
+from src.preprocessing.validation import DataValidator
+from src.preprocessing.imputation_strategies import (
     STRATEGIE_IMPUTAZIONE,
     CODICE_STRATEGIA_DA_NOME_REPORT,
     applica_strategia_imputazione_colonna,

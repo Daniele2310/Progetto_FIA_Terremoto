@@ -115,13 +115,13 @@ Indicatori binari (0/1) per tipologie di sovrastruttura:
 
 ### Moduli Implementati
 
-#### 1. **Data Cleaning** (`DataPreprocessing/data_cleaning.py`)
+#### 1. **Data Cleaning** (`src.preprocessing/data_cleaning.py`)
 - Verifica integrità dataset
 - Rimozione righe duplicate
 - Validazione range feature numeriche
 - Conversione tipi dati
 
-#### 2. **Missing Values** (`DataPreprocessing/missingValues.py`)
+#### 2. **Missing Values** (`src.preprocessing/missing_values.py`)
 Gestione NaN con strategie di imputazione per la feature `age`:
 
 **Outlier Handling**:
@@ -139,7 +139,7 @@ Gestione NaN con strategie di imputazione per la feature `age`:
 - Riduce l'appiattimento tipico della mediana globale
 - Leggero miglioramento su F1 macro (+0.0006) e balanced accuracy (+0.0004)
 
-#### 3. **Codifica Categorica** (`DataPreprocessing/data_cleaning.py`)
+#### 3. **Codifica Categorica** (`src.preprocessing/data_cleaning.py`)
 - **OneHotEncoder** di scikit-learn con `handle_unknown='ignore'`
 - Vantaggi rispetto a `get_dummies()`:
   - Allineamento automatico Train/Test (stesse colonne)
@@ -150,20 +150,20 @@ Gestione NaN con strategie di imputazione per la feature `age`:
 - **StandardScaler** per feature numeriche
 - Essenziale per modelli sensibili alla scala (KNN, Lasso, etc.)
 
-#### 5. **ASCII Cleaning** (`DataPreprocessing/puliziaASCII.py`)
+#### 5. **ASCII Cleaning** (`src.preprocessing/clean_ascii.py`)
 - Normalizzazione encoding caratteri categorici
 - Risoluzione problemi con charset non UTF-8
 
 ---
 
-## Feature Selection
+## src.feature_selection
 
 ### Metodi Implementati
 
 Sono stati implementati **7 metodi di feature selection** con approcci diversi:
 
 #### 1. **Sequential Forward Selection (SFS)**
-- **File**: `Feature Selection/subset selection/sfs.py`
+- **File**: `src.feature_selection/subset selection/sfs.py`
 - **Approccio**: Forward. Parte da 0 feature, aggiunge iterativamente la migliore
 - **Metrica**: Accuracy o F1-micro
 - **Estimator**: LogisticRegression o KNeighborsClassifier
@@ -171,20 +171,20 @@ Sono stati implementati **7 metodi di feature selection** con approcci diversi:
 - **Output**: `sfs_history.csv`, `sfs_selected_features.csv`, `sfs_score_history.png`
 
 #### 2. **Sequential Backward Selection (SBS)**
-- **File**: `Feature Selection/subset selection/sbs_subset_selection.py`
+- **File**: `src.feature_selection/subset selection/sbs_subset_selection.py`
 - **Approccio**: Backward. Parte da tutte le feature, rimuove iterativamente la peggiore
 - **Risultati**: Riduzione 68 → 28 feature; accuracy baseline 0.533 → 0.622 (+8.8%)
 - **Costo**: O(p²), 1.969 modelli valutati in 29.26s
 
 #### 3. **Bidirectional Stepwise Selection**
-- **File**: `Feature Selection/subset selection/bidirectional_subset_selection.py`
+- **File**: `src.feature_selection/subset selection/bidirectional_subset_selection.py`
 - **Approccio**: Alternanza di step forward e backward
 - **Risultati**: Riduzione 68 → 9 feature; accuracy 0.533 → 0.655 (+12.2%)
 - **Stop**: Quando un intero ciclo forward+backward non produce miglioramenti
 - **Output**: `bidirectional_history.csv`, `bidirectional_selected_features.csv`, `bidirectional_score_history.png`
 
 #### 4. **Best First Search**
-- **File**: `Feature Selection/subset selection/best_first.py`
+- **File**: `src.feature_selection/subset selection/best_first.py`
 - **Approccio**: Priority queue, esplorazione greedy guidata da uno score
 - **Pazienza**: k=5 (stop se 5 espansioni consecutive non migliorano il best score)
 - **Risultati**: **82.6% di riduzione dimensionale** (69 → 12 feature)
@@ -194,13 +194,13 @@ Sono stati implementati **7 metodi di feature selection** con approcci diversi:
 - **Validazione**: Script test dedotto `test_best_first.py`
 
 #### 5. **Max-Min Subset Selection**
-- **File**: `Feature Selection/subset selection/max_min_subset_selection.py`
+- **File**: `src.feature_selection/subset selection/max_min_subset_selection.py`
 - **Approccio**: Greedy, seleziona feature per massimo compromesso rilevanza-ridondanza
 - **Formula**: `score(f) = rilevanza(f, target) - ridondanza(f, selected_set)`
 - **Risultati**: Selezionate 6 feature con stop su score negativo
 
 #### 6. **Embedded Lasso Regression**
-- **File**: `Feature Selection/Embedded/lasso_feature_selection.py`
+- **File**: `src.feature_selection/Embedded/lasso_feature_selection.py`
 - **Approccio**: Feature selection durante l'addestramento (regolarizzazione L1)
 - **Alpha**: Selezionabile via menu (LassoCV automatico o valore fisso)
 - **Parametri**: `alpha=0.002` è un buon compromesso
@@ -208,7 +208,7 @@ Sono stati implementati **7 metodi di feature selection** con approcci diversi:
 - **Output**: `lasso_selected_features.csv`, `lasso_all_coefficients.csv`
 
 #### 7. **PCA - Analisi delle Componenti Principali**
-- **File**: `Feature Selection/feature ranking/PCA.py`
+- **File**: `src.feature_selection/feature ranking/PCA.py`
 - **Approccio**: Riduzione dimensionale non supervisionata
 - **Feature Escluse**: `building_id`, `geo_level_*_id`, `damage_grade`
 - **Output**: 
@@ -219,21 +219,21 @@ Sono stati implementati **7 metodi di feature selection** con approcci diversi:
 ### Ranking e Importanza
 
 #### Information Gain (Entropia)
-- **File**: `Feature Selection/feature ranking/uncertainty_information_gain_ranking.py`
+- **File**: `src.feature_selection/feature ranking/uncertainty_information_gain_ranking.py`
 - **Top Features**: `geo_level_3_id` (IG=0.482), `geo_level_2_id` (IG=0.346), `geo_level_1_id` (IG=0.190)
 - **Meno Informative**: `has_secondary_use_*police` (IG≈0)
 
 #### RELIEF (Relevance)
-- **File**: `Feature Selection/feature ranking/relief_ranking.py`
+- **File**: `src.feature_selection/feature ranking/relief_ranking.py`
 - **Approccio**: Misura locale per feature relevance
 - **Top Features**: `geo_level_3_id`, `has_superstructure_cement_mortar_stone`, `geo_level_2_id`
 
 #### Pearson Correlation
-- **File**: `Feature Selection/feature ranking/pairwise_correlation_ranking.py`
+- **File**: `src.feature_selection/feature ranking/pairwise_correlation_ranking.py`
 - **Top Correlate con Target**: `foundation_type_r` (0.343), `ground_floor_type_v` (0.319)
 
 ### Test Monotonia
-- **File**: `Feature Selection/test_monotonia_fast.py`
+- **File**: `src.feature_selection/test_monotonia_fast.py`
 - **Risultato**: Ipotesi di monotonia **NON RISPETTATA** (40% violazioni)
 - **Implicazione**: **Branch-and-bound NOT applicabile** su questo dataset
 - **Motivi**: Ridondanza feature, interazioni non-lineari, overfitting
@@ -264,15 +264,15 @@ Progetto_FIA_Terremoto/
 │   ├── pca_loadings.csv                            # Loadings PCA
 │   └── scree_plot.png                              # Grafico scree plot
 │
-├── DataPreprocessing/
+├── src.preprocessing/
 │   ├── __init__.py
 │   ├── data_cleaning.py               # Pulizia dati e codifica
 │   ├── imputation_strategies.py       # Pattern Strategy per imputazione
-│   ├── missingValues.py               # Gestione valori mancanti
-│   ├── puliziaASCII.py                # Cleaning encoding ASCII
+│   ├── missing_values.py               # Gestione valori mancanti
+│   ├── clean_ascii.py                # Cleaning encoding ASCII
 │   └── validation.py                  # Validazione consistenza
 │
-├── Feature Selection/
+├── src.feature_selection/
 │   ├── test_monotonia_fast.py          # Test ipotesi monotonia
 │   │
 │   ├── feature ranking/
@@ -345,35 +345,35 @@ python main.py
 4. Standardizzazione features
 5. Pipeline PCA
 
-### Feature Selection Standalone
+### src.feature_selection Standalone
 
 ```bash
 # Sequential Forward Selection
-python "Feature Selection\subset selection\sfs.py" --estimator knn --scoring f1_micro
+python "src.feature_selection\subset selection\sfs.py" --estimator knn --scoring f1_micro
 
 # Sequential Backward Selection
-python "Feature Selection\subset selection\sbs_subset_selection.py" --max-features 20
+python "src.feature_selection\subset selection\sbs_subset_selection.py" --max-features 20
 
 # Bidirectional Stepwise
-python "Feature Selection\subset selection\bidirectional_subset_selection.py"
+python "src.feature_selection\subset selection\bidirectional_subset_selection.py"
 
 # Best First Search
-python "Feature Selection\subset selection\best_first.py" --patience 5
+python "src.feature_selection\subset selection\best_first.py" --patience 5
 
 # Lasso Embedded
-python "Feature Selection\Embedded\lasso_feature_selection.py" --alpha 0.002
+python "src.feature_selection\Embedded\lasso_feature_selection.py" --alpha 0.002
 
 # Max-Min Strategy
-python "Feature Selection\subset selection\max_min_subset_selection.py" --max-features 15
+python "src.feature_selection\subset selection\max_min_subset_selection.py" --max-features 15
 
 # PCA
-python "Feature Selection\feature ranking\PCA.py"
+python "src.feature_selection\feature ranking\PCA.py"
 ```
 
 ### Test Monotonia
 
 ```bash
-python "Feature Selection\test_monotonia_fast.py" --num-trials 20 --max-rows 5000
+python "src.feature_selection\test_monotonia_fast.py" --num-trials 20 --max-rows 5000
 ```
 
 ---
@@ -417,7 +417,7 @@ python "Feature Selection\test_monotonia_fast.py" --num-trials 20 --max-rows 500
 ## Decisioni Implementative Chiave
 
 ### 1. Pattern Strategy per Imputazione
-- **File**: `DataPreprocessing/imputation_strategies.py`
+- **File**: `src.preprocessing/imputation_strategies.py`
 - **Motivo**: Separare logica di selezione algoritmo dalla pipeline
 - **Vantaggi**: Estendibilità, chiarezza, manutenibilità
 
