@@ -1491,4 +1491,57 @@ Script di riferimento per verifica futura:
 - Esecuzione standard:
     python src.preprocessing/outlier_detection/outlier_k_comparison.py
 
+================================================================================
+Luca - 02/05/2026
+================================================================================
 
+REPORT BREVE - BENCHMARK RIGOROSO DI FEATURE SELECTION
+
+Obiettivo dell'intervento:
+- Identificare empiricamente le 3 migliori tecniche di feature selection da integrare 
+  in via definitiva nella pipeline principale.
+- Passaggio da un test veloce (suscettibile di overfitting su 5.000 righe e con K fisso) 
+  a un Benchmark Rigoroso per risolvere discrepanze con metodi complessi.
+
+Impostazione run di validazione (Benchmark Rigoroso):
+- Dataset usato: DataPreprocessed/train_features_labels_preprocessed.csv
+- Campionamento Bilanciato: fino a 10.000 campioni per classe per azzerare il bias, 
+  risultando in ~30.000 campioni totali.
+- Validazione interna: Split Holdout 80/20 stratificato.
+- Modello Estimator: KNeighborsClassifier con pesi sulla distanza e dati scalati.
+- Ottimizzazione Iperparametri (Hyperparameter Tuning): GridSearchCV applicato con 
+  Cross-Validation interna a 3 fold sul training, testando i valori K = [3, 5, 9, 15, 21].
+- Metrica Validata: F1-Micro Score.
+- Contenimento costi: i Subset Selectors (SFS, SBS, Best First) hanno operato con un 
+  downsampling interno di 2000 righe per contenere i tempi, dato l'elevato costo O(p^2).
+
+Risultati e Scoperte Principali:
+- Il K ottimale trovato per tutti i metodi testati è stato K=21, a riprova che K=5 (usato 
+  in precedenza) era troppo soggetto al rumore locale nello spazio denso del dataset.
+- Best First Search, che falliva nei test veloci, con K ottimizzato e classi bilanciate 
+  ha dimostrato eccezionali capacità estrattive piazzandosi al secondo posto.
+- Max-Min, in precedenza vittima di un errore di validazione per mismatch di datatype 
+  (ndarray vs pd.Series), è stato testato correttamente ottenendo score onesti (0.497).
+
+CLASSIFICA FINALE (Top 3 e Metriche):
+1. Sequential Backward Selection (SBS)
+   - F1-Micro: 0.5450
+   - Feature Selezionate: 30
+   - Note: Ha dominato pur scartando 38 feature in backward step.
+
+2. Best First Search
+   - F1-Micro: 0.5417
+   - Feature Selezionate: 17
+   - Note: Selezione super efficiente di variabili principalmente legate alla struttura e ai materiali.
+
+3. Relief Ranking
+   - F1-Micro: 0.5385
+   - Feature Selezionate: 15 (Taglio prefissato)
+   - Note: L'approccio supervisionato "near-hit vs near-miss" si è confermato formidabile e solido in abbinata col KNN.
+
+Conclusioni per la Pipeline:
+- Le metodologie confermate per l'integrazione ufficiale nella feature selection della 
+  pipeline nel main sono SBS, Best First Search e Relief.
+- Riguardo la "MEMO: verificare preprocessing una volta richiamati i metodi nel main", 
+  l'uso in questo benchmark del file già preprocessato conferma che la logica funziona correttamente.
+  L'unica accortezza è applicare i ranker o selector solo a valle dell'imputazione e dell'encoding nel main.
