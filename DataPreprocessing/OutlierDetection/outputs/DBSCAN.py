@@ -36,8 +36,8 @@ from sklearn.preprocessing import StandardScaler
 ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
-from DataPreprocessing.puliziaASCII import PuliziaASCII, COLONNE_CATEGORICHE
-from DataPreprocessing.data_cleaning import COLONNE_CONTINUE
+from src.preprocessing.clean_ascii import PuliziaASCII, COLONNE_CATEGORICHE
+from src.preprocessing.data_cleaning import COLONNE_CONTINUE
 
 
 # -- Configurazione ----------------------------------------------------------
