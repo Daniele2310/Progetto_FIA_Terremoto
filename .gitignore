@@ -45,3 +45,13 @@ data/*
 !data/.gitkeep
 outputs/*
 !outputs/.gitkeep
+
+# Output locali degli esperimenti
+experiments/*_results.csv
+experiments/*_diversity.csv
+experiments/*_feature_sets.csv
+experiments/*_subset_summaries.csv
+experiments/*_diverse_selection.csv
+experiments/*_best_params.json
+experiments/*_tuning_results.csv
+Feature Selection/**/outputs/
