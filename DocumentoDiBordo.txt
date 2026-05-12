@@ -1767,3 +1767,227 @@ Miglioramenti futuri possibili:
 - Riguardo la "MEMO: verificare preprocessing una volta richiamati i metodi nel main", 
   l'uso in questo benchmark del file già preprocessato conferma che la logica funziona correttamente.
   L'unica accortezza è applicare i ranker o selector solo a valle dell'imputazione e dell'encoding nel main.
+
+
+================================================================================
+Nicole - 13/05/2026
+================================================================================
+
+STUDIO APPROFONDITO - COME SFRUTTARE I GEO_LEVEL_ID PER AUMENTARE L'ACCURATEZZA
+
+Contesto del progetto:
+- Nel nostro dataset le feature geografiche sono gia emerse piu volte tra le piu
+  informative:
+    geo_level_3_id, geo_level_2_id e geo_level_1_id risultano top feature sia in
+    Information Gain sia in Relief.
+- Questo conferma che la geografia contiene una quota molto alta del segnale utile
+  per predire damage_grade.
+- Finora, pero, nel progetto i geo_level_id sono stati usati soprattutto:
+    1) come feature raw;
+    2) come supporto gerarchico per l'imputazione geografica di age;
+    3) come colonne escluse dalla PCA per evitare distorsioni di varianza.
+
+Obiettivo dello studio:
+- Capire come estrarre ulteriore informazione dai geo_level_id senza trattarli come
+  semplici interi ordinali.
+- Valutare cosa fanno repository esterne piu performanti e cosa puo essere adattato
+  in modo realistico al nostro progetto.
+
+Repo di riferimento analizzata:
+- https://github.com/Shoumik-Gandre/Richter-s-Predictor-Modeling-Earthquake-Damage
+
+Risultato principale dell'analisi:
+- La repo di riferimento non si limita a tenere geo_level_1_id, geo_level_2_id e
+  geo_level_3_id come colonne grezze.
+- Costruisce invece piu rappresentazioni parallele della geografia:
+    1) geo_raw:
+       i tre geo_level_id lasciati come feature esplicite.
+    2) geo_dim_reduction:
+       embedding denso ottenuto da una rete neurale che prende insieme
+       geo_level_1_id, geo_level_2_id e geo_level_3_id e li comprime in un vettore
+       latente.
+    3) geo_rollup:
+       embedding ottenuto usando geo_level_3_id come input e
+       geo_level_1_id + geo_level_2_id come target di ricostruzione/predizione.
+    4) geos encoded:
+       encoding supervisionato dei geo_level_id, per esempio CatBoostEncoder
+       o TargetEncoder.
+
+Dettaglio tecnico della repo di riferimento:
+- Prima fase:
+  i tre geo_level_id vengono label-encodati su train + test per ottenere indici
+  interi compatti.
+- Fase di Geo Dimensionality Reduction:
+  viene allenato un autoencoder che:
+    - usa embedding separati per geo_level_1_id, geo_level_2_id, geo_level_3_id;
+    - concatena gli embedding;
+    - comprime il risultato in un vettore latente (per esempio 16 o 32 dimensioni);
+    - prova poi a ricostruire i tre geo level originali.
+- Fase di Geo3 Rollup:
+  viene allenato un secondo modello che usa solo geo_level_3_id come input e cerca
+  di predire geo_level_1_id e geo_level_2_id.
+  L'encoder intermedio diventa una nuova rappresentazione densa del territorio.
+- Nei notebook modello (XGBoost/LightGBM/Solution):
+  queste rappresentazioni vengono poi usate insieme ad altre trasformazioni nella
+  pipeline finale.
+
+Interpretazione metodologica:
+- L'idea forte della repo di riferimento e che i geo_level_id non sono "numeri", ma
+  identificatori di zone con struttura gerarchica e relazioni latenti.
+- Un embedding prova a catturare:
+    - somiglianza tra aree geografiche;
+    - struttura gerarchica tra i tre livelli;
+    - pattern locali di rischio non esprimibili bene con il solo valore intero.
+
+Perche questo puo aumentare l'accuratezza:
+- Il danno sismico dipende anche da fattori territoriali impliciti:
+    qualità edilizia media locale,
+    urbanizzazione,
+    materiali piu frequenti nella zona,
+    vulnerabilita del terreno,
+    pratiche costruttive regionali.
+- I geo_level_id possono quindi comportarsi come una chiave che identifica
+  contesti omogenei, ma il valore raw da solo spesso non basta a modellare bene
+  queste somiglianze.
+- Una rappresentazione piu ricca puo aiutare il modello a generalizzare meglio tra
+  zone geografiche simili.
+
+Confronto con il nostro progetto:
+- Stato attuale:
+    geografia molto importante, ma sfruttata in modo ancora relativamente semplice.
+- Punto forte gia presente:
+    uso gerarchico dei geo_level_id nell'imputazione di age con fallback
+    geo_level_3 -> geo_level_2 -> geo_level_1 -> globale.
+- Punto debole attuale:
+    manca un modulo dedicato a trasformare i geo_level_id in nuove feature
+    geografiche dense o supervisionate.
+
+Conclusione dello studio:
+- C'e margine realistico per aumentare l'accuratezza lavorando proprio sulla
+  trasformazione dei geo_level_id.
+- La direzione corretta non e rimuoverli o trattarli solo come interi, ma
+  costruire feature geografiche aggiuntive a partire dalla loro struttura.
+
+Proposte ordinate per impatto / costo:
+
+1) TARGET / CATBOOST ENCODING DEI GEO_LEVEL_ID
+- Idea:
+  sostituire o affiancare ai geo_level_id raw una codifica supervisionata basata
+  sul target.
+- Esempi:
+    media di damage_grade per geo_level_1_id,
+    media per geo_level_2_id,
+    media per geo_level_3_id,
+    oppure CatBoostEncoder / TargetEncoder.
+- Vantaggi:
+    implementazione relativamente semplice;
+    molto coerente con i modelli tabellari usati nel progetto;
+    forte probabilita di migliorare subito le prestazioni.
+- Attenzione:
+    da fare con schema out-of-fold sul train per evitare leakage.
+- Priorita consigliata:
+    ALTISSIMA.
+
+2) FEATURE GERARCHICHE AGGREGATE CON SMOOTHING
+- Idea:
+  costruire statistiche geografiche supervisionate e stabili.
+- Feature candidate:
+    - count di edifici per geo_level_1_id / 2 / 3;
+    - probabilita stimata delle classi di danno per ogni geo area;
+    - damage_grade medio atteso per area;
+    - entropia della distribuzione del danno in area;
+    - indicatori di rarita della zona;
+    - smoothing gerarchico:
+        geo_level_3 verso geo_level_2,
+        geo_level_2 verso geo_level_1,
+        geo_level_1 verso globale.
+- Vantaggi:
+    usa esplicitamente la gerarchia geografica;
+    piu interpretabile degli embedding neurali;
+    coerente con il fatto che nel progetto la geografia e gia forte.
+- Priorita consigliata:
+    ALTISSIMA.
+
+3) COLLASSO DELLE AREE RARE / GEO UNKNOWN HANDLING
+- Idea:
+  alcune aree molto rare possono introdurre rumore.
+  Si possono marcare come unknown o collassare al livello geografico superiore.
+- Esempi:
+    - geo_level_3_id con frequenza < k -> valore speciale;
+    - oppure sostituzione con il parent geo_level_2_id in feature derivate;
+    - oppure aggiunta di un flag rare_geo_level_3.
+- Vantaggi:
+    riduce overfitting su zone quasi uniche.
+- Coerenza con repo di riferimento:
+    nel notebook Solution compare anche una trasformazione tipo threshold/unknown
+    per le geo feature.
+- Priorita consigliata:
+    MEDIA-ALTA.
+
+4) EMBEDDING DENSO DEI TRE LIVELLI GEO (TIPO GEO DIM REDUCTION)
+- Idea:
+  replicare una versione alleggerita del modulo di riferimento:
+    input = [geo_level_1_id, geo_level_2_id, geo_level_3_id]
+    output = vettore latente compatto.
+- Vantaggi:
+    rappresentazione piu ricca e meno sparse della geografia.
+- Svantaggi:
+    maggiore costo implementativo;
+    introduce PyTorch e una pipeline di training separata;
+    piu delicato da validare correttamente.
+- Priorita consigliata:
+    MEDIA.
+
+5) EMBEDDING DI ROLLUP DA GEO_LEVEL_3_ID
+- Idea:
+  allenare un encoder che, dato geo_level_3_id, impari a predire geo_level_2_id e
+  geo_level_1_id, poi usare il vettore latente come nuova feature.
+- Significato:
+  si cerca di estrarre in forma compressa la posizione gerarchica del livello piu
+  specifico.
+- Vantaggi:
+    molto interessante dal punto di vista metodologico.
+- Svantaggi:
+    piu sperimentale;
+    probabile rapporto costo/beneficio peggiore rispetto a target encoding e
+    feature aggregate.
+- Priorita consigliata:
+    MEDIA-BASSA.
+
+Linea guida pratica per il nostro progetto:
+- Prima di implementare embedding neurali, conviene sfruttare al massimo la
+  geografia con tecniche tabellari robuste e piu facili da validare:
+    1) target/catboost encoding out-of-fold;
+    2) statistiche geografiche aggregate con smoothing gerarchico;
+    3) gestione esplicita delle aree rare.
+- Solo dopo, se il guadagno si stabilizza, ha senso sperimentare embedding
+  neurali dei geo_level_id.
+
+Proposta operativa concreta:
+- Step 1:
+  creare un modulo src/preprocessing/geo_features.py dedicato alla costruzione di
+  feature geografiche.
+- Step 2:
+  implementare una prima versione con:
+    - count per area;
+    - media target per area;
+    - probabilita per classe per area;
+    - smoothing gerarchico 3 -> 2 -> 1 -> globale;
+    - flag area rara.
+- Step 3:
+  confrontare tre setup:
+    A) geo raw soltanto;
+    B) geo raw + geo aggregate;
+    C) geo raw + geo aggregate + target/catboost encoding.
+- Step 4:
+  misurare l'impatto su accuracy e f1-micro nei benchmark attuali.
+- Step 5:
+  solo se il margine residuo lo giustifica, progettare una versione embedding.
+
+Decisione raccomandata:
+- Il prossimo intervento piu sensato per aumentare l'accuratezza tramite
+  geo_level_id NON e la PCA e non e una semplice one-hot dei geo.
+- La priorita corretta e costruire nuove feature geografiche supervisionate e
+  gerarchiche.
+- Tra le opzioni disponibili, la piu promettente in rapporto beneficio/costo e:
+    geo aggregate + target/catboost encoding con validazione rigorosa anti-leakage.
