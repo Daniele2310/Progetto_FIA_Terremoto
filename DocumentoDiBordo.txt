@@ -1,4 +1,4 @@
-================================================================================
+﻿================================================================================
 DOCUMENTO DI BORDO
 ================================================================================
 
@@ -1542,6 +1542,228 @@ CLASSIFICA FINALE (Top 3 e Metriche):
 Conclusioni per la Pipeline:
 - Le metodologie confermate per l'integrazione ufficiale nella feature selection della 
   pipeline nel main sono SBS, Best First Search e Relief.
+
+
+================================================================================
+Erika - 12/05/2026
+================================================================================
+
+REPORT - SISTEMA MULTI-ESPERTO, BOOSTING, STACKING E TUNING
+
+Obiettivo dell'intervento:
+- Valutare se fosse sensato aggiungere al progetto un sistema multi-esperto.
+- Confrontare regole di aggregazione tradizionali, boosting, stacking e tuning
+  degli iperparametri.
+
+Dataset usato:
+- Input principale: DataPreprocessed/train_features_labels_preprocessed.csv
+- Non e stato usato il test set ufficiale: DataPreprocessed/test_values_preprocessed.csv
+- Run principale finale:
+    5000 campioni per classe, quindi 15000 righe totali.
+    Split 80/20: 12000 righe train, 3000 righe validation.
+
+Riferimento teorico:
+- Multi-Expert System tradizionale:
+    x -> classificatori esperti -> decision profile -> regola di aggregazione.
+- Regole provate:
+    mean, weighted_mean, median, product, majority_vote.
+- Misure di diversita calcolate:
+    disagreement, double fault, Q-statistic, correlation phi.
+
+File implementati:
+- src/ensemble/multi_expert_system.py
+- src/ensemble/__init__.py
+- experiments/evaluate_multi_expert.py
+- experiments/tune_multi_expert_hyperparameters.py
+
+Output locali generati:
+- experiments/multi_expert_results.csv
+- experiments/multi_expert_diversity.csv
+- experiments/multi_expert_feature_sets.csv
+- experiments/multi_expert_subset_summaries.csv
+- experiments/multi_expert_diverse_selection.csv
+- experiments/multi_expert_tuning_results.csv
+- experiments/multi_expert_best_params.json
+
+Nota di pulizia:
+- Gli output locali sono stati aggiunti al .gitignore.
+
+
+Feature set valutati:
+- full: 66 feature preprocessate, escludendo target, building_id e geo_level_*.
+- lasso_top25: prime 25 feature da lasso_selected_features.csv.
+- max_min: feature da max_min_selected_features.csv.
+- relief_top25: ranking Relief calcolato sul train split.
+- information_gain_top25: ranking Information Gain calcolato sul train split.
+- best_first: subset calcolato con Best First Search leggera.
+- sbs: subset calcolato con Sequential Backward Selection leggera.
+
+Esperti valutati:
+- KNN: knn_lasso_top25, knn_relief_top25, knn_sbs.
+- Decision Tree: decision_tree_max_min, decision_tree_best_first.
+- Random Forest: random_forest_full, random_forest_information_gain_top25.
+- Logistic Regression: logistic_lasso_top25.
+- Boosting: adaboost_lasso_top25, adaboost_best_first,
+  hist_gradient_boosting_full, hist_gradient_boosting_lasso_top25.
+
+Motivazione:
+- KNN è un esperto locale, utile con Relief.
+- Decision Tree è interpretabile e instabile, quindi interessante in ensemble.
+- Random Forest è robusto su dati tabellari.
+- Logistic Regression è lineare/globale, quindi diversa da alberi e KNN.
+- AdaBoost rappresenta il boosting classico.
+- HistGradientBoosting è una variante moderna di boosting per dati tabellari.
+
+Nota su Random Forest e MES:
+- Random Forest è già un metodo ensemble/multi-esperto, perché combina molti
+  Decision Tree addestrati su campioni bootstrap e sottoinsiemi casuali di feature.
+- Nel nostro lavoro Random Forest è stata usata sia come baseline ensemble autonoma
+  sia come esperto interno di un MES eterogeneo più ampio.
+- Il MES finale può quindi essere visto come un ensemble eterogeneo che contiene
+  anche un ensemble interno:
+    MES -> Logistic Regression, HistGradientBoosting, Random Forest.
+- Risultati finali:
+    random_forest_full: F1-micro = 0.5740
+    mes_top4_product:  F1-micro = 0.5803
+- Il MES migliora leggermente rispetto al solo Random Forest perché combina la
+  foresta con modelli che commettono errori parzialmente diversi.
+
+Subset Best First e SBS:
+- Best First finale: 12 feature nella run grande.
+- SBS finale: 58 feature nella run grande.
+- Entrambi sono stati calcolati con un limite interno di righe per contenere
+  il costo computazionale.
+
+Boosting e stacking:
+- AdaBoost e stato provato con weak learner DecisionTreeClassifier.
+- Lo stacking e stato implementato come:
+    decision profile -> Logistic Regression meta-classifier.
+- Sono state provate:
+    mes_stacking_profile
+    mes_stacking_profile_plus_features
+- Nella run grande finale lo stacking non ha superato il miglior MES top-4.
+
+Hyperparameter tuning:
+- Script dedicato:
+    experiments/tune_multi_expert_hyperparameters.py
+- Tecnica:
+    GridSearchCV con scoring f1_micro.
+- Run tuning principale:
+    2000 campioni per classe, 3-fold cross-validation.
+- Modelli ottimizzati:
+    logistic_lasso_top25
+    random_forest_full
+    hist_gradient_boosting_full
+    hist_gradient_boosting_lasso_top25
+    adaboost_lasso_top25
+
+Migliori parametri trovati:
+- logistic_lasso_top25:
+    C = 0.3
+    class_weight = balanced
+- random_forest_full:
+    n_estimators = 200
+    max_depth = 16
+    max_features = log2
+    min_samples_leaf = 2
+- hist_gradient_boosting_full:
+    learning_rate = 0.06
+    max_iter = 160
+    max_leaf_nodes = 15
+    l2_regularization = 0.01
+- hist_gradient_boosting_lasso_top25:
+    learning_rate = 0.04
+    max_iter = 160
+    max_leaf_nodes = 15
+    l2_regularization = 0.1
+- adaboost_lasso_top25:
+    n_estimators = 180
+    learning_rate = 0.3
+    estimator__max_depth = 3
+    estimator__min_samples_leaf = 16
+
+Risultati tuning su validation interna:
+1. hist_gradient_boosting_full: F1-micro = 0.5858
+2. hist_gradient_boosting_lasso_top25: F1-micro = 0.5842
+3. logistic_lasso_top25: F1-micro = 0.5825
+4. random_forest_full: F1-micro = 0.5825
+5. adaboost_lasso_top25: F1-micro = 0.5642
+
+Risultati finali MES con parametri tuned:
+1. mes_top4_product
+   - F1-micro: 0.5803
+   - F1-macro: 0.5800
+   - Accuracy: 0.5803
+2. mes_diverse4_product
+   - F1-micro: 0.5803
+   - F1-macro: 0.5800
+   - Accuracy: 0.5803
+3. mes_top4_mean
+   - F1-micro: 0.5800
+   - F1-macro: 0.5793
+   - Accuracy: 0.5800
+4. mes_top4_weighted_mean
+   - F1-micro: 0.5800
+   - F1-macro: 0.5793
+   - Accuracy: 0.5800
+5. logistic_lasso_top25
+   - F1-micro: 0.5793
+   - F1-macro: 0.5785
+   - Accuracy: 0.5793
+
+Miglior risultato finale:
+- Modello: mes_top4_product
+- Interpretazione: sistema multi-esperto con i 4 migliori esperti selezionati
+  e regola product sul decision profile.
+- Score: F1-micro = 0.5803
+
+Esperti del gruppo top-4 finale:
+- logistic_lasso_top25
+- hist_gradient_boosting_full
+- hist_gradient_boosting_lasso_top25
+- random_forest_full
+
+Classification report del miglior MES:
+- Classe 1: precision = 0.7650, recall = 0.6640, f1-score = 0.7109
+- Classe 2: precision = 0.4634, recall = 0.4110, f1-score = 0.4356
+- Classe 3: precision = 0.5349, recall = 0.6660, f1-score = 0.5933
+
+Confusion matrix:
+           pred 1  pred 2  pred 3
+  true 1     664     194     142
+  true 2     152     411     437
+  true 3      52     282     666
+
+Osservazioni:
+- Il MES finale supera leggermente il miglior esperto singolo:
+    mes_top4_product = 0.5803
+    logistic_lasso_top25 = 0.5793
+- Il vantaggio e piccolo, non è un salto netto.
+
+- La classe piu difficile resta la classe 2, spesso confusa con la classe 3.
+
+
+Miglioramenti futuri possibili:
+1. Valutazione su distribuzione reale:
+   - Finora il benchmark principale e bilanciato.
+   - Prossimo test consigliato:
+       python experiments/evaluate_multi_expert.py --sample-mode stratified --n-samples 30000
+
+2. Weighted product ottimizzato:
+   - La regola product attuale usa gli esperti con peso implicito uguale.
+   - Si puo implementare:
+       score(classe) = prodotto_i probabilita_i(classe) ^ peso_i
+
+3. Calibrazione delle probabilita:
+   - Product e mean dipendono dalla qualita delle probabilita.
+   - CalibratedClassifierCV potrebbe rendere piu affidabile il decision profile.
+
+
+4. Tuning piu ampio:
+   - Una ricerca piu ampia su HistGradientBoosting e RandomForest potrebbe
+     migliorare il risultato, ma con costo computazionale maggiore.
+
+
 - Riguardo la "MEMO: verificare preprocessing una volta richiamati i metodi nel main", 
   l'uso in questo benchmark del file già preprocessato conferma che la logica funziona correttamente.
   L'unica accortezza è applicare i ranker o selector solo a valle dell'imputazione e dell'encoding nel main.
