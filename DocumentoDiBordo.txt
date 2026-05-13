@@ -1991,3 +1991,20 @@ Decisione raccomandata:
   gerarchiche.
 - Tra le opzioni disponibili, la piu promettente in rapporto beneficio/costo e:
     geo aggregate + target/catboost encoding con validazione rigorosa anti-leakage.
+
+Sintesi operativa per il progetto:
+- Prima scelta: creare feature geografiche derivate dai tre livelli con
+    statistiche supervisionate e smoothing gerarchico.
+- Seconda scelta: aggiungere encoding supervisionato out-of-fold dei
+    geo_level_id per catturare il segnale target-specifico della zona.
+- Terza scelta: gestire in modo esplicito le aree rare o poco frequenti,
+    collassandole al livello geografico superiore o marcandole come rare.
+- Scelte meno prioritarie: embedding neurali, autoencoder e rollup da
+    geo_level_3_id, perche piu costosi da validare e meno immediati da
+    integrare nella pipeline attuale.
+- Verifica consigliata: confronto A/B tra
+    1) geo raw;
+    2) geo raw + feature aggregate;
+    3) geo raw + feature aggregate + encoding supervisionato.
+- Metrica da monitorare: F1 micro, con controllo separato di accuracy e
+    balanced accuracy per capire se il guadagno e stabile o solo locale.
