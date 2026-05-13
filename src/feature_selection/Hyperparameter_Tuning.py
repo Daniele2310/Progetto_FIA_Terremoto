@@ -126,6 +126,16 @@ def _get_algorithm_configs():
     return configs
 
 
+def get_knn_config():
+    """Restituisce solo la configurazione KNN per uso esterno rapido."""
+    return [c for c in _get_algorithm_configs() if "KNN" in c["name"]]
+
+
+def get_all_configs():
+    """Restituisce tutte le configurazioni (KNN, Random Forest, Decision Tree)."""
+    return _get_algorithm_configs()
+
+
 # ---------------------------------------------------------------------------
 # Funzioni principali
 # ---------------------------------------------------------------------------
@@ -171,7 +181,7 @@ def prepara_dati(df):
     return X, y
 
 
-def esegui_grid_search(X_train, y_train, X_val, y_val, configs=None):
+def esegui_grid_search(X_train, y_train, X_val, y_val, configs=None, verbose=True):
     """
     Per ciascun algoritmo in configs esegue GridSearchCV, addestra il
     modello ottimale e lo valuta sul validation set.
@@ -196,11 +206,12 @@ def esegui_grid_search(X_train, y_train, X_val, y_val, configs=None):
         for values in param_grid.values():
             n_combinazioni *= len(values)
 
-        print(f"\n{'=' * 80}")
-        print(f"  {name}")
-        print(f"  Combinazioni da valutare: {n_combinazioni} x {CV_FOLDS} fold = "
-              f"{n_combinazioni * CV_FOLDS} fit totali")
-        print(f"{'=' * 80}")
+        if verbose:
+            print(f"\n{'=' * 80}")
+            print(f"  {name}")
+            print(f"  Combinazioni da valutare: {n_combinazioni} x {CV_FOLDS} fold = "
+                  f"{n_combinazioni * CV_FOLDS} fit totali")
+            print(f"{'=' * 80}")
 
         start = time.time()
 
@@ -211,7 +222,7 @@ def esegui_grid_search(X_train, y_train, X_val, y_val, configs=None):
             scoring=SCORING,
             n_jobs=N_JOBS,
             refit=True,
-            verbose=1,
+            verbose=1 if verbose else 0,
             error_score="raise",
         )
 
@@ -232,11 +243,12 @@ def esegui_grid_search(X_train, y_train, X_val, y_val, configs=None):
             for k, v in grid.best_params_.items()
         }
 
-        print(f"\n  Completato in {tempo:.1f}s")
-        print(f"    Miglior score CV ({SCORING}): {grid.best_score_:.4f}")
-        print(f"    Score Validation  (F1-micro): {f1_val:.4f}")
-        print(f"    Accuracy Validation:          {acc_val:.4f}")
-        print(f"    Migliori iperparametri:       {best_params_clean}")
+        if verbose:
+            print(f"\n  Completato in {tempo:.1f}s")
+            print(f"    Miglior score CV ({SCORING}): {grid.best_score_:.4f}")
+            print(f"    Score Validation  (F1-micro): {f1_val:.4f}")
+            print(f"    Accuracy Validation:          {acc_val:.4f}")
+            print(f"    Migliori iperparametri:       {best_params_clean}")
 
         risultati.append({
             "Algoritmo": name,

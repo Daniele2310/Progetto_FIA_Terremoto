@@ -1,4 +1,4 @@
-﻿================================================================================
+================================================================================
 DOCUMENTO DI BORDO
 ================================================================================
 
@@ -2008,3 +2008,100 @@ Sintesi operativa per il progetto:
     3) geo raw + feature aggregate + encoding supervisionato.
 - Metrica da monitorare: F1 micro, con controllo separato di accuracy e
     balanced accuracy per capire se il guadagno e stabile o solo locale.
+
+
+================================================================================
+Luca - 13/05/2026
+================================================================================
+
+INTEGRAZIONE HYPERPARAMETER TUNING NEL BENCHMARK DI FEATURE SELECTION
+
+Obiettivo dell'intervento:
+- Integrare il modulo modulare di Hyperparameter Tuning
+    (src/feature_selection/Hyperparameter_Tuning.py) nello script di
+    valutazione dei metodi di Feature Selection
+    (experiments/evaluate_feature_selection.py).
+- Eliminare il grid search inline duplicato che esisteva nello script
+    di valutazione.
+- Rendere lo script completamente configurabile da riga di comando.
+
+Situazione precedente:
+- Lo script evaluate_feature_selection.py conteneva un grid search
+    copia-incollato con solo 5 valori di K per KNN
+    (n_neighbors=[3,5,9,15,21]), weights fisso a 'distance' e
+    metrica di distanza fissa (euclidea).
+- Il modulo Hyperparameter_Tuning.py esisteva gia' come file separato
+    ma non era collegato allo script di valutazione.
+- Il path del dataset era errato (puntava a data/processed/ invece di
+    DataPreprocessed/).
+- Tutti i parametri erano costanti hardcodate nel codice.
+
+Modifiche a src/feature_selection/Hyperparameter_Tuning.py:
+- Aggiunte due funzioni pubbliche per uso esterno:
+    get_knn_config(): restituisce solo la configurazione KNN.
+    get_all_configs(): restituisce tutte le configurazioni
+        (KNN, Random Forest, Decision Tree).
+- Aggiunto parametro verbose a esegui_grid_search() per controllare
+    l'output quando chiamato da altri moduli (default True per
+    backward compatibility).
+
+Modifiche a experiments/evaluate_feature_selection.py:
+- Rimosso il grid search inline duplicato.
+- Introdotta la funzione evaluate_features_with_tuning() che chiama
+    esegui_grid_search() dal modulo modulare.
+- Griglia KNN ora esplora 42 combinazioni
+    (7 K x 2 weights x 3 metriche distanza) invece delle precedenti 5.
+- Con il flag --full-tuning si valutano anche Random Forest e
+    Decision Tree oltre a KNN.
+- Corretto il path del dataset: data/processed/ -> DataPreprocessed/
+- Aggiunto supporto per campionamento stratificato oltre a bilanciato
+    tramite il modulo data_selection.py.
+- Tutti i parametri sono ora configurabili via CLI.
+
+Architettura risultante:
+- evaluate_feature_selection.py chiama il modulo Hyperparameter_Tuning.py
+    come libreria, senza duplicare codice.
+- Se il modulo viene aggiornato (nuovi algoritmi, nuove griglie), i
+    benefici si propagano automaticamente.
+
+Comandi da terminale per valutare i metodi di Feature Selection:
+
+    Valutazione rapida (solo KNN, default):
+    python experiments/evaluate_feature_selection.py
+
+    Valutazione completa (KNN + Random Forest + Decision Tree):
+    python experiments/evaluate_feature_selection.py --full-tuning
+
+Parametri CLI disponibili:
+    --sample-mode {balanced,stratified}
+        Tipo di campionamento. Default: balanced.
+    --max-per-class N
+        Campioni massimi per classe (con balanced). Default: 10000.
+    --n-samples N
+        Campioni totali (con stratified). Default: 20000.
+    --max-features N
+        Feature massime per i ranking. Default: 15.
+    --max-rows-subset N
+        Righe massime per SBS, BestFirst, etc. Default: 2000.
+    --test-size F
+        Quota di validation set. Default: 0.20.
+    --full-tuning
+        Usa KNN + RF + DT invece del solo KNN.
+
+Nota sui valori F1-micro attesi in questo benchmark:
+- I valori F1-micro sono nell'ordine di 0.53-0.55 perche':
+    1) le feature geografiche (geo_level_1/2/3_id) sono escluse dalla
+       valutazione (sono le piu' informative con IG fino a 0.48);
+    2) il classificatore usato e' solo KNN, non il piu' forte su
+       dati tabellari;
+    3) lo scopo del benchmark e' confrontare i metodi FS tra loro,
+       non ottenere il miglior score assoluto.
+- I punteggi reali del progetto saranno significativamente piu' alti
+    quando le feature selezionate verranno usate nel Multi-Expert System
+    con algoritmi piu' potenti e con le feature geografiche incluse.
+
+Output prodotto:
+- experiments/feature_selection_benchmark_rigorous.csv
+    contiene la classifica completa di tutti i metodi FS con:
+    Method, Algoritmo, F1_Micro_CV, F1_Micro_Val, Accuracy_Val,
+    Best_Params, Time_s, N_Features, Selected_Features.
