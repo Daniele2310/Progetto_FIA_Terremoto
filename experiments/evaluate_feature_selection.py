@@ -3,7 +3,8 @@ Benchmark rigoroso di Feature Selection con Hyperparameter Tuning integrato.
 
 Questo script valuta diversi metodi di feature selection confrontando
 le feature selezionate tramite il modulo Hyperparameter_Tuning con
-GridSearchCV completa (KNN di default, oppure KNN + RF + DT con --full-tuning).
+GridSearchCV completa (Random Forest di default, oppure KNN + RF + DT
+con --full-tuning).
 
 Pipeline eseguita:
     1. Caricamento del dataset preprocessato (DataPreprocessed).
@@ -38,7 +39,7 @@ if str(project_root) not in sys.path:
 from src.feature_selection.Hyperparameter_Tuning import (
     esegui_grid_search,
     get_all_configs,
-    get_knn_config,
+    get_rf_config,
 )
 from src.feature_selection.embedded.lasso_feature_selection import LassoFeatureSelector
 from src.feature_selection.feature_ranking.pairwise_correlation_ranking import PairwiseCorrelationRanker
@@ -117,7 +118,7 @@ def parse_args():
     parser.add_argument(
         "--full-tuning",
         action="store_true",
-        help="Usa KNN + Random Forest + Decision Tree (piu' lento). Default: solo KNN.",
+        help="Usa KNN + Random Forest + Decision Tree (piu' lento). Default: solo Random Forest.",
     )
     return parser.parse_args()
 
@@ -138,7 +139,7 @@ def evaluate_features_with_tuning(X_train, y_train, X_val, y_val,
         X_train, y_train: dati di training.
         X_val, y_val: dati di validazione.
         features: lista di nomi delle feature da valutare.
-        full_tuning: se True usa KNN + RF + DT, altrimenti solo KNN.
+        full_tuning: se True usa KNN + RF + DT, altrimenti solo Random Forest.
 
     Returns:
         best_result: dizionario con il miglior risultato (o None).
@@ -154,7 +155,7 @@ def evaluate_features_with_tuning(X_train, y_train, X_val, y_val,
     X_tr_sub = X_train[valid_features]
     X_v_sub = X_val[valid_features]
 
-    configs = get_all_configs() if full_tuning else get_knn_config()
+    configs = get_all_configs() if full_tuning else get_rf_config()
     risultati = esegui_grid_search(
         X_tr_sub, y_train, X_v_sub, y_val, configs, verbose=False
     )
@@ -290,7 +291,7 @@ def run_evaluation(args=None):
         args = parse_args()
 
     full_tuning = args.full_tuning
-    tuning_mode = "COMPLETO (KNN + RF + DT)" if full_tuning else "KNN"
+    tuning_mode = "COMPLETO (KNN + RF + DT)" if full_tuning else "Random Forest"
     sample_label = (
         f"bilanciato (max {args.max_per_class}/classe)"
         if args.sample_mode == "balanced"
@@ -360,9 +361,9 @@ def run_evaluation(args=None):
     print(f"\n5. Inizio valutazione dei {len(methods)} metodi di Feature Selection...")
 
     for name, MethodClass, kwargs in methods:
-        print(f"\n{'─' * 80}")
-        print(f"  → {name}")
-        print(f"{'─' * 80}")
+        print(f"\n{'-' * 80}")
+        print(f"  > {name}")
+        print(f"{'-' * 80}")
 
         start_time = time.time()
 
@@ -384,7 +385,7 @@ def run_evaluation(args=None):
                 X_train_pca, pca_model = pca_data
                 X_val_pca = pca_model.transform(X_val).iloc[:, :len(selected_features)]
 
-                configs = get_all_configs() if full_tuning else get_knn_config()
+                configs = get_all_configs() if full_tuning else get_rf_config()
                 tuning_results = esegui_grid_search(
                     X_train_pca, y_train, X_val_pca, y_val, configs, verbose=False
                 )

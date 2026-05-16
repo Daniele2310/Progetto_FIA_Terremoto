@@ -131,6 +131,16 @@ def get_knn_config():
     return [c for c in _get_algorithm_configs() if "KNN" in c["name"]]
 
 
+def get_rf_config():
+    """Restituisce solo la configurazione Random Forest per uso esterno."""
+    return [c for c in _get_algorithm_configs() if "Random Forest" in c["name"]]
+
+
+def get_dt_config():
+    """Restituisce solo la configurazione Decision Tree per uso esterno."""
+    return [c for c in _get_algorithm_configs() if "Decision Tree" in c["name"]]
+
+
 def get_all_configs():
     """Restituisce tutte le configurazioni (KNN, Random Forest, Decision Tree)."""
     return _get_algorithm_configs()
