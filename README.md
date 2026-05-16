@@ -3,7 +3,7 @@
 Predizione del livello di danno agli edifici colpiti dal terremoto del 2015 Gorkha in Nepal.
 
 **Competizione**: [DrivenData: Richter's Predictor](https://www.drivendata.org/competitions/57/nepal-earthquake/)  
-**Partecipanti**: 8,653 iscritti | **Difficoltà**: Intermediate Practice
+**Partecipanti**: 8.653 iscritti | **Difficoltà**: Intermediate Practice
 
 ---
 
@@ -52,7 +52,7 @@ Uno dei più grandi dataset post-disastro mai raccolti (260.601 campioni di trai
 
 ### Caratteristiche del Dataset
 
-**Importanti**: 
+**Importanti**:
 - Variabili categoriche sono offuscate con caratteri ASCII casuali (es. `a`, `b`, `c`)
 - L'apparizione dello stesso carattere in colonne diverse **NON** implica lo stesso valore
 - Sono presenti **valori mancanti** (NaN) distribuiti nelle feature
@@ -89,19 +89,19 @@ Uno dei più grandi dataset post-disastro mai raccolti (260.601 campioni di trai
 
 ### Superstructure/Materiali (11)
 Indicatori binari (0/1) per tipologie di sovrastruttura:
-- `has_superstructure_adobe_mud` - Adobe/Fango
-- `has_superstructure_mud_mortar_stone` - Pietra con mortaio di fango
-- `has_superstructure_stone_flag` - Pietra
-- `has_superstructure_cement_mortar_stone` - Pietra con mortaio di cemento
-- `has_superstructure_mud_mortar_brick` - Mattone con mortaio di fango
-- `has_superstructure_cement_mortar_brick` - Mattone con mortaio di cemento
-- `has_superstructure_timber` - Legno
-- `has_superstructure_bamboo` - Bambù
-- `has_superstructure_rc_engineered` - Cemento armato (engineered)
-- `has_superstructure_rc_non_engineered` - Cemento armato (non-engineered)
-- `has_superstructure_other` - Altri materiali
+- `has_superstructure_adobe_mud` — Adobe/Fango
+- `has_superstructure_mud_mortar_stone` — Pietra con mortaio di fango
+- `has_superstructure_stone_flag` — Pietra
+- `has_superstructure_cement_mortar_stone` — Pietra con mortaio di cemento
+- `has_superstructure_mud_mortar_brick` — Mattone con mortaio di fango
+- `has_superstructure_cement_mortar_brick` — Mattone con mortaio di cemento
+- `has_superstructure_timber` — Legno
+- `has_superstructure_bamboo` — Bambù
+- `has_superstructure_rc_engineered` — Cemento armato (engineered)
+- `has_superstructure_rc_non_engineered` — Cemento armato (non-engineered)
+- `has_superstructure_other` — Altri materiali
 
-### Proprietà e Utilizzo (8)
+### Proprietà e Utilizzo (8+)
 | Feature | Tipo | Descrizione |
 |---------|------|-------------|
 | `legal_ownership_status` | cat | Status di proprietà legale (a, r, v, w) |
@@ -115,128 +115,205 @@ Indicatori binari (0/1) per tipologie di sovrastruttura:
 
 ### Moduli Implementati
 
-#### 1. **Data Cleaning** (`src.preprocessing/data_cleaning.py`)
-- Verifica integrità dataset
-- Rimozione righe duplicate
+#### 1. Data Cleaning (`src/preprocessing/data_cleaning.py`)
+- Verifica integrità dataset e rimozione duplicati
 - Validazione range feature numeriche
-- Conversione tipi dati
+- Rilevamento outlier con metodo **IQR parametrico** (moltiplicatore `k=3.0` — Extreme IQR, validato sperimentalmente come ottimale tra k∈{1.5, 2.0, 2.5, 3.0, 4.0})
+- Aggiunta feature `monum_flag`: flag booleano per edifici con età anomala ma non sentinel
 
-#### 2. **Missing Values** (`src.preprocessing/missing_values.py`)
-Gestione NaN con strategie di imputazione per la feature `age`:
+#### 2. Missing Values (`src/preprocessing/missing_values.py`)
+Gestione NaN con strategie di imputazione selezionabili via menu interattivo:
 
 **Outlier Handling**:
 - Valori `age` nel range [250, 995] → convertiti in NaN (valori sentinel)
 
 **Strategie di Imputazione** (selezionabili via menu):
-1. **Univariata - Media**: mediana globale del training set
-2. **Univariata - Mediana**: mediana globale del training set
-3. **Multivariata - Regressione Lineare**: mediana per gruppi geografici in gerarchia
-4. **KNN Predictor**: K-nearest neighbors per imputazione
-5. **Valutazione Automatica**: confronto rapido con KNN e selezione del metodo migliore
+1. **Univariata - Media**
+2. **Univariata - Mediana**
+3. **Multivariata - Regressione Lineare** (mediana per gruppi geografici gerarchici)
+4. **KNN Predictor**
+5. **Valutazione Automatica**: confronto rapido con KNN veloce e selezione del metodo migliore
 
-**Motivo della scelta multivariata** (attualmente implementata):
-- Mantiene informazione geografica locale
-- Riduce l'appiattimento tipico della mediana globale
-- Leggero miglioramento su F1 macro (+0.0006) e balanced accuracy (+0.0004)
+**Validazione delle strategie** (confronto su holdout 80/20):
 
-#### 3. **Codifica Categorica** (`src.preprocessing/data_cleaning.py`)
-- **OneHotEncoder** di scikit-learn con `handle_unknown='ignore'`
-- Vantaggi rispetto a `get_dummies()`:
-  - Allineamento automatico Train/Test (stesse colonne)
-  - Gestione di categorie mai viste nel test set
-  - Prevenzione del data leakage
+| Strategia | Accuracy | F1 Macro | Balanced Accuracy |
+|-----------|----------|----------|-------------------|
+| Univariata media | 0.5785 | — | — |
+| KNN predictor | 0.5785 | — | — |
+| Univariata mediana | 0.5783 | — | — |
+| Multivariata regressione lineare | 0.5783 | — | — |
 
-#### 4. **Standardizzazione**
-- **StandardScaler** per feature numeriche
-- Essenziale per modelli sensibili alla scala (KNN, Lasso, etc.)
+La strategia migliore viene selezionata automaticamente (opzione 5).
 
-#### 5. **ASCII Cleaning** (`src.preprocessing/clean_ascii.py`)
-- Normalizzazione encoding caratteri categorici
-- Risoluzione problemi con charset non UTF-8
+#### 3. Pattern Strategy per Imputazione (`src/preprocessing/imputation_strategies.py`)
+Implementazione del **Design Pattern Strategy** per isolare la logica di selezione dell'algoritmo dal flusso principale:
+- Interfaccia astratta `ImputationStrategy`
+- Quattro strategie concrete intercambiabili
+- `ImputationContext` come punto di delega
+- Registry `STRATEGIE_IMPUTAZIONE` per selezione a runtime
+
+#### 4. Codifica Categorica
+**OneHotEncoder** di scikit-learn con `handle_unknown='ignore'`, scelto rispetto a `get_dummies()` per:
+- Allineamento automatico Train/Test (stesse colonne garantite)
+- Gestione di categorie mai viste nel test set
+- Prevenzione del data leakage
+
+#### 5. Standardizzazione
+**StandardScaler** fittato sul train e applicato a train e test separatamente.
+
+#### 6. ASCII Cleaning (`src/preprocessing/clean_ascii.py`)
+Normalizzazione encoding caratteri categorici offuscati.
 
 ---
 
-## src.feature_selection
+## Feature Selection
 
-### Metodi Implementati
+Sono stati implementati **7 metodi di feature selection** con approcci diversi, poi confrontati in un benchmark rigoroso.
 
-Sono stati implementati **7 metodi di feature selection** con approcci diversi:
-
-#### 1. **Sequential Forward Selection (SFS)**
-- **File**: `src.feature_selection/subset selection/sfs.py`
-- **Approccio**: Forward. Parte da 0 feature, aggiunge iterativamente la migliore
-- **Metrica**: Accuracy o F1-micro
-- **Estimator**: LogisticRegression o KNeighborsClassifier
-- **Risultati**: Selezionate 7 feature
-- **Output**: `sfs_history.csv`, `sfs_selected_features.csv`, `sfs_score_history.png`
-
-#### 2. **Sequential Backward Selection (SBS)**
-- **File**: `src.feature_selection/subset selection/sbs_subset_selection.py`
-- **Approccio**: Backward. Parte da tutte le feature, rimuove iterativamente la peggiore
-- **Risultati**: Riduzione 68 → 28 feature; accuracy baseline 0.533 → 0.622 (+8.8%)
-- **Costo**: O(p²), 1.969 modelli valutati in 29.26s
-
-#### 3. **Bidirectional Stepwise Selection**
-- **File**: `src.feature_selection/subset selection/bidirectional_subset_selection.py`
-- **Approccio**: Alternanza di step forward e backward
-- **Risultati**: Riduzione 68 → 9 feature; accuracy 0.533 → 0.655 (+12.2%)
-- **Stop**: Quando un intero ciclo forward+backward non produce miglioramenti
-- **Output**: `bidirectional_history.csv`, `bidirectional_selected_features.csv`, `bidirectional_score_history.png`
-
-#### 4. **Best First Search**
-- **File**: `src.feature_selection/subset selection/best_first.py`
-- **Approccio**: Priority queue, esplorazione greedy guidata da uno score
-- **Pazienza**: k=5 (stop se 5 espansioni consecutive non migliorano il best score)
-- **Risultati**: **82.6% di riduzione dimensionale** (69 → 12 feature)
-  - **Accuracy: 0.6913 (~69.1%)**
-  - Baseline (full features): 57%
-- **Costo computazionale**: Ragionevole rispetto alla ricerca esaustiva
-- **Validazione**: Script test dedotto `test_best_first.py`
-
-#### 5. **Max-Min Subset Selection**
-- **File**: `src.feature_selection/subset selection/max_min_subset_selection.py`
-- **Approccio**: Greedy, seleziona feature per massimo compromesso rilevanza-ridondanza
-- **Formula**: `score(f) = rilevanza(f, target) - ridondanza(f, selected_set)`
-- **Risultati**: Selezionate 6 feature con stop su score negativo
-
-#### 6. **Embedded Lasso Regression**
-- **File**: `src.feature_selection/Embedded/lasso_feature_selection.py`
-- **Approccio**: Feature selection durante l'addestramento (regolarizzazione L1)
-- **Alpha**: Selezionabile via menu (LassoCV automatico o valore fisso)
-- **Parametri**: `alpha=0.002` è un buon compromesso
-- **Risultati con α=0.002**: 68 → 49 feature, mantenimento prestazioni baseline
-- **Output**: `lasso_selected_features.csv`, `lasso_all_coefficients.csv`
-
-#### 7. **PCA - Analisi delle Componenti Principali**
-- **File**: `src.feature_selection/feature ranking/PCA.py`
-- **Approccio**: Riduzione dimensionale non supervisionata
-- **Feature Escluse**: `building_id`, `geo_level_*_id`, `damage_grade`
-- **Output**: 
-  - `scree_plot.png` - per scelta manuale del gomito
-  - `pca_variance_summary.csv` - varianza per componente
-  - `train_values_preprocessed.csv` - dataset con componenti PCA
-
-### Ranking e Importanza
+### Metodi di Ranking
 
 #### Information Gain (Entropia)
-- **File**: `src.feature_selection/feature ranking/uncertainty_information_gain_ranking.py`
+- **File**: `src/feature_selection/feature_ranking/uncertainty_information_gain_ranking.py`
 - **Top Features**: `geo_level_3_id` (IG=0.482), `geo_level_2_id` (IG=0.346), `geo_level_1_id` (IG=0.190)
-- **Meno Informative**: `has_secondary_use_*police` (IG≈0)
+- **Meno informative**: feature `has_secondary_use_*` (IG≈0)
 
-#### RELIEF (Relevance)
-- **File**: `src.feature_selection/feature ranking/relief_ranking.py`
-- **Approccio**: Misura locale per feature relevance
-- **Top Features**: `geo_level_3_id`, `has_superstructure_cement_mortar_stone`, `geo_level_2_id`
+#### RELIEF
+- **File**: `src/feature_selection/feature_ranking/relief_ranking.py`
+- **Top Features**: `geo_level_3_id`, `geo_level_2_id`, `has_superstructure_cement_mortar_stone`
+- Coerente con Information Gain: la geografia domina il ranking supervisionato
 
-#### Pearson Correlation
-- **File**: `src.feature_selection/feature ranking/pairwise_correlation_ranking.py`
-- **Top Correlate con Target**: `foundation_type_r` (0.343), `ground_floor_type_v` (0.319)
+#### Correlazione di Pearson
+- **File**: `src/feature_selection/feature_ranking/pairwise_correlation_ranking.py`
+- **Top correlate col target**: `foundation_type_r` (0.343), `ground_floor_type_v` (0.319)
+- **Correlazioni negative forti** tra dummy della stessa variabile categorica (atteso con OHE)
 
-### Test Monotonia
-- **File**: `src.feature_selection/test_monotonia_fast.py`
-- **Risultato**: Ipotesi di monotonia **NON RISPETTATA** (40% violazioni)
-- **Implicazione**: **Branch-and-bound NOT applicabile** su questo dataset
-- **Motivi**: Ridondanza feature, interazioni non-lineari, overfitting
+### Metodi di Subset Selection
+
+#### Sequential Forward Selection (SFS)
+- **File**: `src/feature_selection/subset_selection/sfs.py`
+- **Approccio**: Forward — parte da 0 feature, aggiunge iterativamente la migliore
+- **Estimator**: LogisticRegression o KNeighborsClassifier
+- **Risultati**: 7 feature selezionate (age, area_percentage, has_superstructure_stone_flag, has_superstructure_rc_engineered, foundation_type_h, foundation_type_i, roof_type_x)
+- **Stop**: quando lo score smette di crescere
+
+#### Sequential Backward Selection (SBS)
+- **File**: `src/feature_selection/subset_selection/sbs_subset_selection.py`
+- **Approccio**: Backward — parte da tutte le feature, rimuove iterativamente la peggiore
+- **Risultati**: 68 → 28 feature; accuracy 0.533 → 0.622 (+8.8%)
+- **Costo**: O(p²), 1.969 modelli valutati in 29.26s
+
+#### Stepwise Bidirectional Selection
+- **File**: `src/feature_selection/subset_selection/bidirectional_subset_selection.py`
+- **Approccio**: Alternanza di step forward e backward per ciclo
+- **Risultati**: 68 → 9 feature; accuracy 0.533 → 0.655 (+12.2%)
+- **Stop**: quando un intero ciclo non produce miglioramenti
+
+#### Best First Search
+- **File**: `src/feature_selection/subset_selection/best_first.py`
+- **Approccio**: Priority queue con espansione greedy, patience k=5
+- **Valutazione**: Decision Tree con 5-fold CV
+- **Risultati**: **82.6% di riduzione** (69 → 12 feature), accuracy **0.6913**
+- **Nota**: riduzione significativa con miglioramento delle prestazioni rispetto alla baseline del 57%
+
+#### Max-Min Subset Selection
+- **File**: `src/feature_selection/subset_selection/max_min_subset_selection.py`
+- **Formula**: `score(f) = |corr(f, target)| - max|corr(f, selected_set)|`
+- **Risultati**: 6 feature selezionate (stop su score negativo)
+
+#### Embedded Lasso Regression
+- **File**: `src/feature_selection/embedded/lasso_feature_selection.py`
+- **Approccio**: Regolarizzazione L1 durante l'addestramento
+- **Alpha**: selezionabile (LassoCV automatico o valore fisso)
+- **Valore consigliato**: `alpha=0.002` → 49 feature, prestazioni stabili
+- **Feature stabili**: presenti in tutte le prove (count_families, foundation_type_r, ground_floor_type_v, has_superstructure_mud_mortar_stone, ...)
+
+#### PCA
+- **File**: `src/feature_selection/feature_ranking/pca.py`
+- **Approccio**: Riduzione dimensionale non supervisionata
+- **Feature escluse dal fit**: `building_id`, `geo_level_*_id`, `damage_grade`
+- **Output**: scree plot + tabella varianza per scelta manuale del gomito
+
+### Analisi Monotonia e Branch-and-Bound
+- **File**: `tests/test_monotonia_fast.py`
+- **Risultato**: Ipotesi di monotonia **NON RISPETTATA** (40% di violazioni su 20 trial)
+- **Implicazione**: Branch-and-Bound **non applicabile** su questo dataset
+- **Cause**: ridondanza tra feature, interazioni non lineari, overfitting locale di KNN
+
+### Benchmark Rigoroso di Feature Selection
+Benchmark finale con campionamento bilanciato (~30.000 campioni), GridSearchCV con K∈[3,5,9,15,21], K ottimale trovato = 21.
+
+**Classifica finale (Top 3)**:
+
+| Posizione | Metodo | F1-Micro | Feature Selezionate |
+|-----------|--------|----------|---------------------|
+| 1 | Sequential Backward Selection (SBS) | 0.5450 | 30 |
+| 2 | Best First Search | 0.5417 | 17 |
+| 3 | Relief Ranking | 0.5385 | 15 (taglio prefissato) |
+
+I tre metodi confermati per l'integrazione nella pipeline principale sono **SBS**, **Best First Search** e **Relief**.
+
+---
+
+## Sistema Multi-Esperto ed Ensemble
+
+### Architettura (`src/ensemble/multi_expert_system.py`)
+Sistema multi-esperto tradizionale basato su **decision profile** con aggregazione configurabile: `mean`, `weighted_mean`, `median`, `product`, `majority_vote`.
+
+### Esperti Valutati
+- **KNN**: su feature set da Lasso, Relief e SBS
+- **Decision Tree**: su feature set Max-Min e Best First
+- **Random Forest**: su full features e Information Gain top-25
+- **Logistic Regression**: su Lasso top-25
+- **AdaBoost** e **HistGradientBoosting**: su full features e Lasso top-25
+
+### Hyperparameter Tuning (`src/feature_selection/Hyperparameter_Tuning.py`)
+GridSearchCV con 3-fold CV su 2.000 campioni per classe. Migliori parametri trovati:
+
+| Modello | Parametri Ottimali |
+|---------|-------------------|
+| Logistic Regression (lasso_top25) | C=0.3, class_weight=balanced |
+| Random Forest (full) | n_estimators=200, max_depth=16, max_features=log2, min_samples_leaf=2 |
+| HistGradientBoosting (full) | learning_rate=0.06, max_iter=160, max_leaf_nodes=15 |
+| HistGradientBoosting (lasso_top25) | learning_rate=0.04, max_iter=160, max_leaf_nodes=15, l2=0.1 |
+| AdaBoost (lasso_top25) | n_estimators=180, learning_rate=0.3, max_depth=3 |
+
+### Risultati Finali MES
+
+| Configurazione | F1-Micro | F1-Macro | Accuracy |
+|----------------|----------|----------|----------|
+| mes_top4_product | **0.5803** | 0.5800 | 0.5803 |
+| mes_diverse4_product | 0.5803 | 0.5800 | 0.5803 |
+| mes_top4_mean | 0.5800 | 0.5793 | 0.5800 |
+| logistic_lasso_top25 (singolo) | 0.5793 | 0.5785 | 0.5793 |
+
+**Miglior modello**: `mes_top4_product` — sistema multi-esperto con i 4 migliori esperti (logistic_lasso_top25, hist_gradient_boosting_full, hist_gradient_boosting_lasso_top25, random_forest_full) e regola `product` sul decision profile.
+
+**Classification report del miglior MES**:
+
+| Classe | Precision | Recall | F1 |
+|--------|-----------|--------|----|
+| 1 | 0.765 | 0.664 | 0.711 |
+| 2 | 0.463 | 0.411 | 0.436 |
+| 3 | 0.535 | 0.666 | 0.593 |
+
+La classe 2 rimane la più difficile, spesso confusa con la classe 3.
+
+---
+
+## Analisi delle Feature Geografiche
+
+Le variabili `geo_level_1_id`, `geo_level_2_id` e `geo_level_3_id` risultano le più informative in tutti i ranking (IG, Relief). Sono state identificate diverse strategie per sfruttarle meglio:
+
+**Priorità alta**:
+- Target/CatBoost Encoding out-of-fold dei geo_level_id
+- Feature aggregate gerarchiche con smoothing (count edifici per area, probabilità danno per zona, entropia locale, gestione aree rare)
+
+**Priorità media**:
+- Collasso delle aree rare al livello geografico superiore + flag `rare_geo`
+- Embedding denso dei tre livelli (autoencoder)
+
+**Priorità bassa**:
+- Geo3 Rollup embedding (più sperimentale, costo/beneficio peggiore)
 
 ---
 
@@ -245,76 +322,65 @@ Sono stati implementati **7 metodi di feature selection** con approcci diversi:
 ```
 Progetto_FIA_Terremoto/
 │
-├── README.md                          # Questo file
-├── DocumentoDiBordo.txt               # Diario di lavoro dettagliato
-├── main.py                            # Script principale di preprocessing
+├── README.md
+├── DocumentoDiBordo.txt               # Diario di lavoro dettagliato (cronologico)
+├── main.py                            # Pipeline principale di preprocessing
 │
 ├── Data/
-│   ├── train_values.csv               # Dataset training (features)
-│   ├── train_labels.csv               # Etichette danno
-│   ├── test_values.csv                # Dataset test
-│   ├── submission_format.csv          # Template submission
-│   └── Puliti/                        # Dataset puliti intermediari
+│   ├── train_values.csv
+│   ├── train_labels.csv
+│   ├── test_values.csv
+│   └── submission_format.csv
 │
 ├── DataPreprocessed/
-│   ├── train_values_preprocessed.csv               # Features preprocessate
-│   ├── test_values_preprocessed.csv                # Test preprocessato
-│   ├── train_features_labels_preprocessed.csv      # Train + labels preprocessati
-│   ├── pca_variance_summary.csv                    # Varianza componenti PCA
-│   ├── pca_loadings.csv                            # Loadings PCA
-│   └── scree_plot.png                              # Grafico scree plot
+│   ├── train_values_preprocessed.csv
+│   ├── test_values_preprocessed.csv
+│   ├── train_features_labels_preprocessed.csv
+│   ├── pca_variance_summary.csv
+│   ├── pca_loadings.csv
+│   └── scree_plot.png
 │
-├── src.preprocessing/
-│   ├── __init__.py
-│   ├── data_cleaning.py               # Pulizia dati e codifica
-│   ├── imputation_strategies.py       # Pattern Strategy per imputazione
-│   ├── missing_values.py               # Gestione valori mancanti
-│   ├── clean_ascii.py                # Cleaning encoding ASCII
-│   └── validation.py                  # Validazione consistenza
-│
-├── src.feature_selection/
-│   ├── test_monotonia_fast.py          # Test ipotesi monotonia
+├── src/
+│   ├── preprocessing/
+│   │   ├── clean_ascii.py
+│   │   ├── data_cleaning.py
+│   │   ├── data_selection.py
+│   │   ├── imputation_strategies.py   # Pattern Strategy
+│   │   ├── missing_values.py
+│   │   ├── validation.py
+│   │   └── outlier_detection/
+│   │       └── outlier_k_comparison.py
 │   │
-│   ├── feature ranking/
-│   │   ├── uncertainty_information_gain_ranking.py
-│   │   ├── relief_ranking.py
-│   │   ├── pairwise_correlation_ranking.py
-│   │   ├── PCA.py
-│   │   └── outputs/
-│   │       ├── pairwise_ranking.csv
-│   │       ├── uncertainty_information_gain_ranking.csv
-│   │       ├── relief_ranking.csv
-│   │       └── ...
+│   ├── feature_selection/
+│   │   ├── Hyperparameter_Tuning.py
+│   │   ├── feature_ranking/
+│   │   │   ├── pairwise_correlation_ranking.py
+│   │   │   ├── relief_ranking.py
+│   │   │   ├── uncertainty_information_gain_ranking.py
+│   │   │   └── pca.py
+│   │   ├── subset_selection/
+│   │   │   ├── sfs.py
+│   │   │   ├── sbs_subset_selection.py
+│   │   │   ├── bidirectional_subset_selection.py
+│   │   │   ├── best_first.py
+│   │   │   └── max_min_subset_selection.py
+│   │   └── embedded/
+│   │       └── lasso_feature_selection.py
 │   │
-│   ├── subset selection/
-│   │   ├── sfs.py                                # Sequential Forward Selection
-│   │   ├── sbs_subset_selection.py              # Sequential Backward Selection
-│   │   ├── bidirectional_subset_selection.py    # Bidirectional Stepwise
-│   │   ├── best_first.py                        # Best First Search
-│   │   ├── max_min_subset_selection.py          # Max-Min Strategy
-│   │   ├── test_best_first.py                   # Validazione Best First
-│   │   ├── validate_bidirectional.py            # Validazione Bidirectional
-│   │   └── outputs/
-│   │       ├── sfs_history.csv
-│   │       ├── sbs_selected_features.csv
-│   │       ├── bidirectional_summary.json
-│   │       ├── best_first_summary.json
-│   │       └── ...
-│   │
-│   ├── Embedded/
-│   │   ├── lasso_feature_selection.py
-│   │   └── outputs/
-│   │       ├── lasso_selected_features.csv
-│   │       ├── lasso_all_coefficients.csv
-│   │       └── lasso_summary.json
-│   │
-│   └── outputs/
+│   └── ensemble/
+│       └── multi_expert_system.py
 │
-├── experiments/                       # Modelli di experiment
+├── experiments/
+│   ├── evaluate_feature_selection.py
+│   ├── evaluate_multi_expert.py
+│   └── tune_multi_expert_hyperparameters.py
 │
-├── venv/                              # Ambiente virtuale Python
+├── tests/
+│   ├── test_best_first.py
+│   ├── test_monotonia_fast.py
+│   └── validate_bidirectional.py
 │
-└── requirements.txt                   # Dipendenze Python
+└── requirements.txt
 ```
 
 ---
@@ -323,141 +389,125 @@ Progetto_FIA_Terremoto/
 
 ### Setup Iniziale
 
-```powershell
-# 1. Attivare ambiente virtuale
-.\venv\Scripts\Activate.ps1
+```bash
+# Attivare ambiente virtuale
+.\venv\Scripts\Activate.ps1   # Windows
+source venv/bin/activate       # Linux/Mac
 
-# 2. Installare dipendenze (se necessario)
+# Installare dipendenze
 pip install -r requirements.txt
 ```
 
-### Esecuzione Preprocessing Completo
+### Preprocessing Completo
 
 ```bash
-# Run il main menu interattivo
 python main.py
 ```
 
-**Opzioni disponibili nel menu**:
-1. Imputazione di feature numeriche con outlier
-2. Selezione metodo imputazione `age`
-3. Codifica OneHot delle categoriche
-4. Standardizzazione features
-5. Pipeline PCA
+Il menu interattivo guida attraverso: imputazione outlier, scelta strategia per `age`, OHE, standardizzazione e PCA opzionale.
 
-### src.feature_selection Standalone
+### Feature Selection Standalone
 
 ```bash
 # Sequential Forward Selection
-python "src.feature_selection\subset selection\sfs.py" --estimator knn --scoring f1_micro
+python src/feature_selection/subset_selection/sfs.py --estimator knn --scoring f1_micro
 
 # Sequential Backward Selection
-python "src.feature_selection\subset selection\sbs_subset_selection.py" --max-features 20
+python src/feature_selection/subset_selection/sbs_subset_selection.py --min-features 20
 
 # Bidirectional Stepwise
-python "src.feature_selection\subset selection\bidirectional_subset_selection.py"
+python src/feature_selection/subset_selection/bidirectional_subset_selection.py
 
 # Best First Search
-python "src.feature_selection\subset selection\best_first.py" --patience 5
+python src/feature_selection/subset_selection/best_first.py --patience 5
 
 # Lasso Embedded
-python "src.feature_selection\Embedded\lasso_feature_selection.py" --alpha 0.002
+python src/feature_selection/embedded/lasso_feature_selection.py --alpha 0.002
 
 # Max-Min Strategy
-python "src.feature_selection\subset selection\max_min_subset_selection.py" --max-features 15
+python src/feature_selection/subset_selection/max_min_subset_selection.py --max-features 15
 
 # PCA
-python "src.feature_selection\feature ranking\PCA.py"
+python src/feature_selection/feature_ranking/pca.py
 ```
 
-### Test Monotonia
+### Benchmark e Valutazione
 
 ```bash
-python "src.feature_selection\test_monotonia_fast.py" --num-trials 20 --max-rows 5000
+# Benchmark feature selection (solo KNN)
+python experiments/evaluate_feature_selection.py
+
+# Benchmark completo (KNN + RF + DT)
+python experiments/evaluate_feature_selection.py --full-tuning
+
+# Valutazione sistema multi-esperto
+python experiments/evaluate_multi_expert.py
+
+# Hyperparameter tuning
+python experiments/tune_multi_expert_hyperparameters.py
+
+# Test monotonia (prerequisito per branch-and-bound)
+python tests/test_monotonia_fast.py --num-trials 20 --max-rows 5000
 ```
 
 ---
 
-## Risultati Principali
+## Riepilogo Risultati
 
-### Baseline
-- **Features**: 68 (dopo one-hot encoding)
-- **Accuracy**: 0.5921
-- **F1 Macro**: 0.4632
-- **Balanced Accuracy**: 0.4552
+### Baseline (68 feature, KNN k=5)
+- Accuracy: 0.592 | F1 Macro: 0.463 | Balanced Accuracy: 0.455
 
-### Best First Search
-- **Feature ridotte**: 69 → 12 feature (-82.6%)
-- **Accuracy**: 0.6913 (+16.8%)
-- **Messaggio**: Riduzione significativa con mantenimento/miglioramento prestazioni
+### Feature Selection (confronto su ~30.000 campioni bilanciati, K ottimale=21)
 
-### Bidirectional Selection
-- **Feature ridotte**: 68 → 9 feature
-- **Accuracy**: 0.6550 (+12.2%)
-- **Modelli valutati**: 688 in 17.61s
+| Metodo | F1-Micro | Feature |
+|--------|----------|---------|
+| SBS | 0.545 | 30 |
+| Best First Search | 0.542 | 17 |
+| Relief | 0.539 | 15 |
 
-### SBS (Sequential Backward)
-- **Feature ridotte**: 68 → 28 feature
-- **Accuracy**: 0.6217 (+8.8%)
-- **Modelli valutati**: 1.969 in 29.26s
+### Sistema Multi-Esperto (5.000 campioni per classe, 15.000 totali)
 
-### Lasso (α=0.002)
-- **Feature ridotte**: 68 → 49 feature
-- **Accuracy**: ~0.59 (stabilità baseline)
-- **Vantaggio**: Embedded, veloce, interpretabile
+| Configurazione | F1-Micro |
+|----------------|----------|
+| mes_top4_product | **0.580** |
+| HistGradientBoosting (full, tuned) | 0.586 *(singolo esperto)* |
+| Random Forest (full, tuned) | 0.575 *(singolo esperto)* |
 
-### Feature Stabili (presenti in tutte le selezioni)
-- Caratteristiche geografiche: `geo_level_*_id`
-- Strutturali: `count_floors_pre_eq`, `count_families`
-- Materiali: Indicatori di superstructure (adobe, stone, brick, timber, bamboo, RC)
-- Posizione e tipo edificio
+### Feature Stabili in Tutte le Selezioni
+Strutturali e materiali: `count_floors_pre_eq`, `count_families`, `foundation_type_r/i/w`, `ground_floor_type_v`, `has_superstructure_mud_mortar_stone`, `has_superstructure_cement_mortar_brick`, `has_superstructure_rc_engineered`, `roof_type_q/x`, `position_s/t`
 
 ---
 
 ## Decisioni Implementative Chiave
 
-### 1. Pattern Strategy per Imputazione
-- **File**: `src.preprocessing/imputation_strategies.py`
-- **Motivo**: Separare logica di selezione algoritmo dalla pipeline
-- **Vantaggi**: Estendibilità, chiarezza, manutenibilità
+**Pattern Strategy per imputazione** — separa la logica di scelta algoritmo dal main; estendibile aggiungendo solo una nuova classe concreta.
 
-### 2. OneHotEncoder vs get_dummies()
-- **Motivo**: Allineamento automatico Train/Test, gestione categorie sconosciute
-- **Implementazione**: `handle_unknown='ignore'`
+**OneHotEncoder vs get_dummies()** — garantisce allineamento Train/Test e gestione categorie sconosciute senza data leakage.
 
-### 3. Esclusione Geographic IDs da PCA
-- **Motivo**: Alteravano scala varianza, rendevano scree plot ininterpretabile
-- **Soluzione**: Esclusione dal fit, riattacco post-PCA
+**Esclusione Geographic IDs da PCA** — i geo_level_id alteravano la scala della varianza rendendo lo scree plot illeggibile; vengono riallegati dopo la trasformazione.
 
-### 4. Test Monotonia per Branch-and-Bound
-- **Ritratto**: Ipotesi violata 40% dei trial
-- **Conclusione**: Branch-and-bound non applicabile; mantenere metodi euristici
+**k=3.0 per IQR** — validato sperimentalmente come ottimale tra k∈{1.5, 2.0, 2.5, 3.0, 4.0}; rimuove solo gli outlier genuini senza perdere dati validi.
+
+**Branch-and-bound escluso** — ipotesi di monotonia violata nel 40% dei trial; i metodi euristici (SFS, SBS, Bidirectional, Best First) rimangono le scelte corrette.
 
 ---
 
 ## Prossimi Passi
 
-1. **Modellazione Avanzata**: Usare subset di feature migliore (Best First 12 feat.) per addestrare modelli complessi (XGBoost, LightGBM, Ensemble)
-2. **Hyperparameter Tuning**: GridSearch/RandomSearch sui modelli scelti
-3. **Ensemble Methods**: Combinare predizioni di modelli diversi
-4. **Ordinality Constraint**: Exploitare natura ordinale del target (damage_grade: 1 < 2 < 3)
-5. **Stacked Generalization**: Meta-modello su predizioni di base learners
+1. **Feature geografiche supervisionate**: target/CatBoost encoding out-of-fold dei geo_level_id + statistiche aggregate gerarchiche con smoothing (priorità alta)
+2. **Modelli avanzati sul subset Best First (12 feature)**: XGBoost, LightGBM — riduzione del rumore può aiutare significativamente
+3. **Weighted product ottimizzato nel MES**: pesi per esperto calibrati invece di impliciti uguali
+4. **Calibrazione probabilità**: CalibratedClassifierCV per migliorare il decision profile
+5. **Tuning più ampio**: spazio di ricerca esteso per HistGradientBoosting e RandomForest
 
 ---
 
 ## Documentazione Estesa
 
-Per dettagli completi su ogni decisione, esperimento e iterazione, consultare:
+Per dettagli completi su ogni decisione, esperimento e iterazione consultare:
 ```
 DocumentoDiBordo.txt
 ```
-
-Diario cronologico che documenta:
-- Scelte metodologiche e motivazioni
-- Esperimenti comparativi
-- Output e risultati di ogni fase
-- Note problematiche e risoluzioni
-
----
+Diario cronologico che documenta scelte metodologiche, esperimenti comparativi, output di ogni fase e note sulle problematiche risolte.
 
 
