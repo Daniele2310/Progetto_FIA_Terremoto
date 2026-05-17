@@ -1,4 +1,4 @@
-================================================================================
+﻿================================================================================
 DOCUMENTO DI BORDO
 ================================================================================
 
@@ -2105,3 +2105,171 @@ Output prodotto:
     contiene la classifica completa di tutti i metodi FS con:
     Method, Algoritmo, F1_Micro_CV, F1_Micro_Val, Accuracy_Val,
     Best_Params, Time_s, N_Features, Selected_Features.
+
+
+================================================================================
+Erika - 17/05/2026
+================================================================================
+
+RETE NEURALE CON EMBEDDING DEI GEO_LEVEL_ID
+
+Obiettivo dell'intervento:
+- Verificare in modo sperimentale se le feature geografiche
+    geo_level_1_id, geo_level_2_id e geo_level_3_id contengono informazione
+    predittiva utile per damage_grade.
+- Capire se una rete neurale con embedding riesce a estrarre informazione
+    latente da questi identificativi, invece di trattarli come semplici
+    numeri interi.
+- Confrontare tre scenari sullo stesso split train/validation:
+    1) rete senza geo_level_id;
+    2) rete che usa solo embedding dei geo_level_id;
+    3) rete che usa feature tabellari + embedding dei geo_level_id.
+
+Interpretazione metodologica:
+- Abbiamo usato una rete neurale supervisionata con embedding: formalmente è un
+  classificatore, ma il suo layer di embedding serve anche come strumento per
+  estrarre rappresentazioni latenti dai geo_level_id.
+- La rete classifica il danno, ma per farlo impara automaticamente che certe
+  zone geografiche hanno pattern simili di rischio/danno. Quindi ci aiuta sia
+  a predire, sia a capire che nei codici geografici c’è informazione nascosta
+  utile.
+- In pratica, i geo_level_id non vengono interpretati come valori ordinati
+  (per esempio "12567 e' piu grande di 42"), ma come categorie.
+  Ogni categoria geografica viene trasformata in un vettore denso appreso
+  durante il training.
+
+Ambiente locale utilizzato:
+- Virtual environment locale:
+    .venv
+- Python:
+    3.13
+- Dipendenze principali:
+    torch 2.12.0+cpu
+    numpy 2.4.5
+    pandas 3.0.3
+    scikit-learn 1.8.0
+- File requirements dedicato:
+    requirements-geo-nn-cpu.txt
+
+Script implementato:
+- experiments/evaluate_geo_embedding_torch.py
+
+Comando usato per l'esperimento completo:
+
+    .\.venv\Scripts\python.exe experiments\evaluate_geo_embedding_torch.py --sample-mode full --epochs 30 --patience 6 --batch-size 4096 --learning-rate 0.001 --weight-decay 0.0001 --dropout 0.15
+
+Dataset e split:
+- Dataset usato:
+    DataPreprocessed/train_features_labels_preprocessed.csv
+- Numero righe:
+    260601
+- Split:
+    train 80%, validation 20%
+- Split stratificato sul target damage_grade.
+- Metrica principale:
+    F1-micro
+- Nota:
+    per un problema multiclass single-label, F1-micro coincide numericamente
+    con l'accuracy, ma viene mantenuta per coerenza con la metrica della
+    competizione.
+
+Struttura della rete neurale:
+- La rete implementata si chiama TabularGeoNet.
+- Input tabellare denso:
+    tutte le feature preprocessate esclusi:
+        building_id,
+        damage_grade,
+        geo_level_1_id,
+        geo_level_2_id,
+        geo_level_3_id.
+    Numero feature dense: 66.
+- Le feature dense vengono standardizzate con StandardScaler:
+    fit sul train, transform su train e validation.
+- Input geografico:
+    geo_level_1_id,
+    geo_level_2_id,
+    geo_level_3_id.
+- Ogni geo_level_id viene mappato a indici compatti appresi solo sul train.
+    Le categorie non viste ricevono indice 0.
+- Embedding utilizzati:
+    geo_level_1_id -> embedding dimensione 4
+    geo_level_2_id -> embedding dimensione 16
+    geo_level_3_id -> embedding dimensione 32
+- Numero categorie viste nel train completo:
+    geo_level_1_id: 31
+    geo_level_2_id: 1410
+    geo_level_3_id: 11382
+- Gli embedding vengono concatenati tra loro.
+- Nei modelli che usano anche le feature tabellari, il vettore geografico
+    concatenato viene unito alle 66 feature dense standardizzate.
+- Parte MLP:
+    Linear(input_dim -> 128)
+    BatchNorm1d(128)
+    ReLU
+    Dropout(0.15)
+    Linear(128 -> 64)
+    BatchNorm1d(64)
+    ReLU
+    Dropout(0.15)
+    Linear(64 -> 3)
+- Output:
+    3 logit, uno per ogni classe damage_grade.
+- Loss:
+    CrossEntropyLoss.
+- Ottimizzatore:
+    AdamW, learning_rate=0.001, weight_decay=0.0001.
+- Early stopping:
+    patience=6 epoche senza miglioramento della F1-micro su validation.
+
+Modelli confrontati:
+- majority_baseline:
+    predice sempre la classe piu frequente.
+- mlp_no_geo:
+    MLP sulle 66 feature dense, senza usare i geo_level_id.
+- geo_embedding_only:
+    rete che usa solo gli embedding dei tre geo_level_id.
+- mlp_with_geo_embeddings:
+    MLP sulle 66 feature dense + embedding dei tre geo_level_id.
+
+Risultati dell'esperimento completo:
+
+| Modello | F1-micro | F1-macro | Accuracy | Best epoch |
+|---|---:|---:|---:|---:|
+| mlp_with_geo_embeddings | 0.740738 | 0.692447 | 0.740738 | 22 |
+| geo_embedding_only | 0.715470 | 0.628296 | 0.715470 | 23 |
+| mlp_no_geo | 0.611980 | 0.527221 | 0.611980 | 26 |
+| majority_baseline | 0.568907 | 0.241742 | 0.568907 | 0 |
+
+Classification report del miglior modello (mlp_with_geo_embeddings):
+
+| Classe damage_grade | Precision | Recall | F1-score | Support |
+|---|---:|---:|---:|---:|
+| 1 | 0.6452 | 0.5536 | 0.5959 | 5025 |
+| 2 | 0.7506 | 0.8258 | 0.7864 | 29652 |
+| 3 | 0.7466 | 0.6501 | 0.6950 | 17444 |
+
+Sintesi dei risultati:
+- La rete senza geo_level_id arriva a F1-micro 0.611980.
+- La rete che usa solo i geo_level_id tramite embedding arriva gia' a
+    F1-micro 0.715470.
+- La rete che combina feature tabellari ed embedding geografici arriva a
+    F1-micro 0.740738.
+- Il guadagno di mlp_with_geo_embeddings rispetto a mlp_no_geo e':
+    0.740738 - 0.611980 = +0.128758 F1-micro.
+- Il risultato conferma che ignorare i geo_level_id faceva perdere una quota
+    molto rilevante di informazione predittiva.
+
+Output prodotti:
+- experiments/geo_embedding_torch_results.csv
+    tabella finale dei risultati.
+- experiments/geo_embedding_torch_history.csv
+    andamento epoca per epoca di loss e metriche.
+- experiments/geo_embedding_torch_summary.json
+    riepilogo configurazione, risultati e classification report.
+
+Conclusione:
+- L'esperimento conferma che le feature geografiche sono fondamentali.
+- Gli embedding neurali permettono di trasformare i codici geografici in
+    rappresentazioni dense e supervisionate.
+- La rete e' quindi usata sia come classificatore sia come strumento per
+    verificare e sfruttare informazione latente nei geo_level_id.
