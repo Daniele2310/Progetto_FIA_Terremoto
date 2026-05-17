@@ -48,6 +48,8 @@ outputs/*
 
 # Output locali degli esperimenti
 experiments/*_results.csv
+experiments/*_history.csv
+experiments/*_summary.json
 experiments/*_diversity.csv
 experiments/*_feature_sets.csv
 experiments/*_subset_summaries.csv
