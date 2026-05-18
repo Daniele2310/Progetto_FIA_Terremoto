@@ -309,7 +309,7 @@ def run_evaluation(args=None):
 
     # ── 1. Caricamento dataset ─────────────────────────────────────────
     print("\n1. Caricamento dataset preprocessato...")
-    data_path = project_root / "DataPreprocessed" / "train_features_labels_preprocessed.csv"
+    data_path = project_root / "DataPreprocessed" / "processed" / "train_features_labels_preprocessed.csv"
 
     if not data_path.exists():
         print(f"   ERRORE: File non trovato: {data_path}")

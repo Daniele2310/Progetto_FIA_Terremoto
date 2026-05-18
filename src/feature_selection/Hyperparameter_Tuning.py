@@ -155,11 +155,11 @@ def carica_dataset(data_path=None):
     Carica il dataset preprocessato.
 
     Se data_path e' None, cerca il file
-    DataPreprocessed/train_features_labels_preprocessed.csv
+    DataPreprocessed/processed/train_features_labels_preprocessed.csv
     nella root di progetto.
     """
     if data_path is None:
-        data_path = PROJECT_ROOT / "DataPreprocessed" / "train_features_labels_preprocessed.csv"
+        data_path = PROJECT_ROOT / "DataPreprocessed" / "processed" / "train_features_labels_preprocessed.csv"
     data_path = Path(data_path)
 
     if not data_path.exists():

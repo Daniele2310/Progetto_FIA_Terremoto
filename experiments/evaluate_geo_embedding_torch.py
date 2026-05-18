@@ -170,7 +170,7 @@ def parse_int_list(raw: str, expected_len: int | None = None) -> list[int]:
 
 
 def load_dataset() -> pd.DataFrame:
-    path = PROJECT_ROOT / "DataPreprocessed" / "train_features_labels_preprocessed.csv"
+    path = PROJECT_ROOT / "DataPreprocessed" / "processed" / "train_features_labels_preprocessed.csv"
     if not path.exists():
         raise FileNotFoundError(f"Dataset preprocessato non trovato: {path}. Esegui prima main.py.")
 

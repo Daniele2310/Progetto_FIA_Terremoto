@@ -51,7 +51,7 @@ def main():
 
     # Usa Path(__file__).resolve().parent per avere percorsi sicuri ovunque esegui lo script
     project_root = Path(__file__).resolve().parents[2]
-    data_preprocessed_path = project_root / "DataPreprocessed" / "train_features_labels_preprocessed.csv"
+    data_preprocessed_path = project_root / "DataPreprocessed" / "processed" / "train_features_labels_preprocessed.csv"
 
     if not data_preprocessed_path.exists():
         print(f"❌ File non trovato: {data_preprocessed_path}")
