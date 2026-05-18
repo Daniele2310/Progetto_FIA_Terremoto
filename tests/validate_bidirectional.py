@@ -8,7 +8,7 @@ import pandas as pd
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import train_test_split
 
-from bidirectional_subset_selection import StepwiseBidirectionalSelector
+from src.feature_selection.subset_selection.bidirectional_subset_selection import StepwiseBidirectionalSelector
 
 
 def _build_estimator(name: str, random_state: int):
