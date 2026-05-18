@@ -43,8 +43,7 @@ Thumbs.db
 *.csv.bak
 data/*
 !data/.gitkeep
-outputs/*
-!outputs/.gitkeep
+outputs/
 
 # Output locali degli esperimenti
 experiments/*_results.csv

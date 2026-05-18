@@ -492,16 +492,6 @@ Strutturali e materiali: `count_floors_pre_eq`, `count_families`, `foundation_ty
 
 ---
 
-## Prossimi Passi
-
-1. **Feature geografiche supervisionate**: target/CatBoost encoding out-of-fold dei geo_level_id + statistiche aggregate gerarchiche con smoothing (priorità alta)
-2. **Modelli avanzati sul subset Best First (12 feature)**: XGBoost, LightGBM — riduzione del rumore può aiutare significativamente
-3. **Weighted product ottimizzato nel MES**: pesi per esperto calibrati invece di impliciti uguali
-4. **Calibrazione probabilità**: CalibratedClassifierCV per migliorare il decision profile
-5. **Tuning più ampio**: spazio di ricerca esteso per HistGradientBoosting e RandomForest
-
----
-
 ## Documentazione Estesa
 
 Per dettagli completi su ogni decisione, esperimento e iterazione consultare:
