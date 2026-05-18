@@ -41,8 +41,10 @@ Thumbs.db
 
 # Specifico del progetto
 *.csv.bak
-data/*
-!data/.gitkeep
+# Ignora solo file CSV grandi, non le cartelle Data
+*.csv
+!Data/
+!Data/**/.gitkeep
 outputs/
 
 # Output locali degli esperimenti
