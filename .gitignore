@@ -41,10 +41,11 @@ Thumbs.db
 
 # Specifico del progetto
 *.csv.bak
-# Ignora solo file CSV grandi, non le cartelle Data
+# Ignora CSV grandi, non la struttura Data
 *.csv
-!Data/
-!Data/**/.gitkeep
+# Ma non escludere il README della cartella Data
+!Data/README.md
+DataPreprocessed/
 outputs/
 
 # Output locali degli esperimenti
