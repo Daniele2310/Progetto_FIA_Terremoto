@@ -332,13 +332,16 @@ Progetto_FIA_Terremoto/
 │   ├── test_values.csv
 │   └── submission_format.csv
 │
-├── DataPreprocessed/
-│   ├── train_values_preprocessed.csv
-│   ├── test_values_preprocessed.csv
-│   ├── train_features_labels_preprocessed.csv
-│   ├── pca_variance_summary.csv
-│   ├── pca_loadings.csv
-│   └── scree_plot.png
+├── Data/
+│   ├── raw/
+│   │   ├── train_values.csv
+│   │   ├── train_labels.csv
+│   │   ├── test_values.csv
+│   │   └── submission_format.csv
+│   └── preprocessed/
+│       ├── train_values_preprocessed.csv
+│       ├── test_values_preprocessed.csv
+│       └── train_features_labels_preprocessed.csv
 │
 ├── src/
 │   ├── preprocessing/

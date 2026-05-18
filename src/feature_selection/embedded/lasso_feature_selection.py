@@ -59,7 +59,7 @@ class LassoFeatureSelector:
             return merged, f"{train_values_path} + {train_labels_path}"
 
         preprocessed_with_labels = (
-            project_root / "DataPreprocessed" / "processed" / "train_features_labels_preprocessed.csv"
+            project_root / "Data" / "preprocessed" / "train_features_labels_preprocessed.csv"
         )
         if preprocessed_with_labels.exists():
             return pd.read_csv(preprocessed_with_labels), str(preprocessed_with_labels)

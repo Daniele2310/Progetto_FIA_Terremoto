@@ -135,7 +135,7 @@ def parse_args():
 
 
 def load_dataset():
-    data_path = PROJECT_ROOT / "DataPreprocessed" / "processed" / "train_features_labels_preprocessed.csv"
+    data_path = PROJECT_ROOT / "Data" / "preprocessed" / "train_features_labels_preprocessed.csv"
     if not data_path.exists():
         raise FileNotFoundError(
             f"Dataset preprocessato non trovato: {data_path}. Esegui prima main.py."

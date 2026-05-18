@@ -63,7 +63,7 @@ def esegui_silenzioso(funzione, *args, **kwargs):
         return funzione(*args, **kwargs)
 
 
-def salva_dataset_preprocessati(train_values, train_labels, test_values, output_dir="DataPreprocessed/processed"):
+def salva_dataset_preprocessati(train_values, train_labels, test_values, output_dir="Data/preprocessed"):
     """Crea la cartella di output e salva i dataset preprocessati in formato CSV."""
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)

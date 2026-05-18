@@ -24,7 +24,7 @@ class FastMonotonicityTester:
     @staticmethod
     def _load_data(project_root: Path) -> tuple[np.ndarray, np.ndarray]:
         """Carica il dataset preprocessato."""
-        preprocessed_path = project_root / "DataPreprocessed" / "processed" / "train_features_labels_preprocessed.csv"
+        preprocessed_path = project_root / "Data" / "preprocessed" / "train_features_labels_preprocessed.csv"
         
         if preprocessed_path.exists():
             df = pd.read_csv(preprocessed_path)
