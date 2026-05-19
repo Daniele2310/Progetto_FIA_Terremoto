@@ -32,9 +32,9 @@ class PuliziaASCII:
     
     def carica_dati(self):
         """Carica i dati di training e test dal disco."""
-        train_values = pd.read_csv(self.cartella_input / 'train_values.csv')
-        train_labels = pd.read_csv(self.cartella_input / 'train_labels.csv')
-        test_values = pd.read_csv(self.cartella_input / 'test_values.csv')
+        train_values = pd.read_csv(self.cartella_input / 'raw/train_values.csv')
+        train_labels = pd.read_csv(self.cartella_input / 'raw/train_labels.csv')
+        test_values = pd.read_csv(self.cartella_input / 'raw/test_values.csv')
         
         print(f"Train: {train_values.shape[0]} x {train_values.shape[1]}")
         print(f"Labels: {train_labels.shape[0]}")
