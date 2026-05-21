@@ -16,9 +16,38 @@ from src.preprocessing.imputation_strategies import (
     CODICE_STRATEGIA_DA_NOME_REPORT,
     applica_strategia_imputazione_colonna,
 )
+from src.preprocessing.outlier_detection.DBSCAN import main as dbscan_main
 
 
 SHOW_DATA_QUALITY_PLOTS = False
+
+
+def menu_outlier_detection():
+    """
+    Mostra un menu per scegliere il metodo di outlier detection da utilizzare.
+
+    Opzioni:
+        1) IQR (Interquartile Range) - pipeline di preprocessing completa esistente
+        2) DBSCAN - outlier detection multivariato con hyperparameter tuning
+
+    Returns:
+        str: la scelta dell'utente ("1" o "2")
+    """
+    print("\n" + "=" * 80)
+    print("MENU OUTLIER DETECTION")
+    print("=" * 80)
+    print("1) IQR (Interquartile Range) - pipeline preprocessing completa")
+    print("2) DBSCAN - outlier detection multivariato con hyperparameter tuning")
+
+    try:
+        scelta = input("Seleziona metodo [1-2] (default=1): ").strip()
+    except EOFError:
+        scelta = ""
+
+    if scelta not in {"1", "2"}:
+        scelta = "1"
+
+    return scelta
 
 def menu_strategia_imputazione_outlier_numerici():
     """
@@ -89,6 +118,21 @@ def main():
     print("\n" + "=" * 80)
     print("PREPROCESSING TERREMOTO NEPAL 2015")
     print("=" * 80)
+
+    # =======================
+    # SCELTA METODO OUTLIER DETECTION
+    # =======================
+    scelta_outlier = menu_outlier_detection()
+
+    if scelta_outlier == "2":
+        # Esegue la pipeline DBSCAN (caricamento dati, grid search, ecc.)
+        print("\n>> Avvio outlier detection con DBSCAN...\n")
+        dbscan_main()
+        print("\n>> Pipeline DBSCAN completata.")
+        return None
+
+    # Se si sceglie IQR (opzione 1), prosegue con la pipeline di preprocessing esistente
+    print("\n>> Proseguo con outlier detection IQR e preprocessing completo...\n")
 
     # =======================
     # CARICAMENTO DATI
@@ -447,14 +491,17 @@ def main():
     )
 
 
+
 if __name__ == "__main__":
-    (
-        train_values,
-        train_labels,
-        test_values,
-        report,
-        train_quality_report,
-        test_quality_report,
-        validation_report_train,
-        validation_report_test
-    ) = main()
+    risultato = main()
+    if risultato is not None:
+        (
+            train_values,
+            train_labels,
+            test_values,
+            report,
+            train_quality_report,
+            test_quality_report,
+            validation_report_train,
+            validation_report_test
+        ) = risultato
