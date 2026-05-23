@@ -1974,6 +1974,26 @@ Proposta operativa concreta:
     - probabilita per classe per area;
     - smoothing gerarchico 3 -> 2 -> 1 -> globale;
     - flag area rara.
+- Dettaglio implementativo del modulo geo_features.py:
+  - Per ciascun livello geografico vengono calcolate:
+      1) count:
+         quante righe del train appartengono a quella zona;
+      2) frequency:
+         count / numero totale di righe;
+      3) target_mean_smoothed:
+         media del target nella zona, corretta con smoothing verso il livello
+         geografico superiore;
+      4) class_prob_smoothed:
+         probabilita smoothed di ciascuna classe del target nella zona;
+      5) is_rare:
+         flag binario che marca le zone con frequenza troppo bassa.
+  - Oltre alle feature per singolo livello, viene costruita anche una versione
+    gerarchica finale con fallback:
+      geo_level_3 -> geo_level_2 -> geo_level_1 -> globale.
+- Significato dello smoothing:
+  - Le statistiche di una zona molto piccola non vengono usate in modo "grezzo".
+  - Se una zona ha pochi esempi, la sua media/probabilita viene avvicinata a
+    quella del livello padre, per ridurre rumore e overfitting.
 - Step 3:
   confrontare tre setup:
     A) geo raw soltanto;
@@ -2008,6 +2028,21 @@ Sintesi operativa per il progetto:
     3) geo raw + feature aggregate + encoding supervisionato.
 - Metrica da monitorare: F1 micro, con controllo separato di accuracy e
     balanced accuracy per capire se il guadagno e stabile o solo locale.
+
+Nota sul modulo implementato:
+- Nel file src/preprocessing/geo_features.py la classe GeoFeatureEngineer espone
+  una interfaccia pubblica composta da:
+    - fit(...):
+      apprende le statistiche geografiche dal train;
+    - transform(...):
+      applica le feature geografiche a un dataframe nuovo;
+    - fit_transform(...):
+      scorciatoia standard fit + transform;
+    - fit_transform_oof(...):
+      costruisce le feature sul train in modalita out-of-fold, per limitare il
+      leakage nella fase di training.
+- I metodi con prefisso "_" restano invece interni e servono al funzionamento
+  del modulo (costruzione statistiche, smoothing, lookup e validazioni).
 
 
 ================================================================================
@@ -2273,3 +2308,107 @@ Conclusione:
     rappresentazioni dense e supervisionate.
 - La rete e' quindi usata sia come classificatore sia come strumento per
     verificare e sfruttare informazione latente nei geo_level_id.
+
+
+================================================================================
+Nicole - 23/05/2026
+================================================================================
+
+REPORT - FEATURE GEOGRAFICHE AGGREGATE
+
+Obiettivo dell'intervento:
+- Implementare una versione tabellare e interpretabile del preprocessing sui
+  geo_level_id.
+- Verificare se statistiche aggregate e smoothing gerarchico migliorano le
+  prestazioni rispetto all'uso delle sole feature preprocessate.
+
+File implementati:
+- src/preprocessing/geo_features.py
+- experiments/evaluate_geo_features.py
+
+Modulo GeoFeatureEngineer:
+- Il modulo costruisce feature derivate da:
+    geo_level_1_id,
+    geo_level_2_id,
+    geo_level_3_id.
+- Le statistiche vengono calcolate per ciascun livello geografico:
+    count,
+    frequency,
+    target_mean_smoothed,
+    class_prob_smoothed,
+    is_rare.
+- Viene mantenuta la struttura gerarchica:
+    geo_level_3 -> geo_level_2 -> geo_level_1 -> globale.
+- Lo smoothing riduce il rischio di affidarsi troppo a zone con pochi esempi:
+    se una zona fine ha pochi dati, la statistica viene avvicinata a quella del
+    livello geografico superiore.
+
+Gestione anti-leakage:
+- Sul train viene usato fit_transform_oof(...):
+    le statistiche di ogni fold vengono calcolate usando solo gli altri fold.
+- Su validation/test si usa invece:
+    fit(...) sul train,
+    transform(...) sui dati nuovi.
+- Questo evita che la riga valutata riceva informazione calcolata usando il suo
+  stesso target.
+
+Script di valutazione:
+- experiments/evaluate_geo_features.py
+- Confronta:
+    1) baseline_raw_geo:
+       feature preprocessate originali;
+    2) baseline_plus_geo_aggregate:
+       feature preprocessate originali + feature geografiche aggregate.
+- Estimator usato nella run:
+    HistGradientBoostingClassifier.
+- Dataset:
+    Data/preprocessed/train_features_labels_preprocessed.csv.
+- Campionamento:
+    stratified, circa 30000 righe.
+
+Comando eseguito:
+    python experiments/evaluate_geo_features.py
+
+Risultati:
+
+| Setup | N feature | Accuracy | F1-micro | F1-macro | Balanced accuracy |
+|---|---:|---:|---:|---:|---:|
+| baseline_raw_geo | 69 | 0.706167 | 0.706167 | 0.630842 | 0.605917 |
+| baseline_plus_geo_aggregate | 94 | 0.713500 | 0.713500 | 0.642283 | 0.613428 |
+
+Delta osservato:
+- Feature aggiunte:
+    25.
+- F1-micro:
+    +0.007333.
+- Accuracy:
+    +0.007333.
+- F1-macro:
+    +0.011441.
+- Balanced accuracy:
+    +0.007512.
+
+Output prodotti:
+- outputs/geo_features/geo_features_results.csv
+- outputs/geo_features/geo_features_preview.csv
+- outputs/geo_features/geo_features_summary.json
+- outputs/geo_features/geo_features_classification_reports.json
+
+Interpretazione:
+- Il codice funziona correttamente dal punto di vista tecnico:
+    genera nuove feature, non produce NaN e completa la valutazione.
+- Il miglioramento e positivo su tutte le metriche principali.
+- Il guadagno e piu contenuto rispetto agli embedding neurali, ma il metodo e
+  piu interpretabile, piu leggero e piu semplice da integrare nella pipeline
+  tabellare.
+- Il risultato conferma che le informazioni geografiche aggregate sono utili e
+  possono essere usate come base per ulteriori confronti con target/catboost
+  encoding e con modelli ensemble.
+
+Conclusione:
+- Le geo aggregate sono una prima soluzione concreta e validata per sfruttare i
+  geo_level_id senza introdurre reti neurali.
+- Il passo successivo consigliato e confrontare:
+    1) geo raw;
+    2) geo raw + geo aggregate;
+    3) geo raw + geo aggregate + encoding supervisionato out-of-fold.
