@@ -4,12 +4,11 @@ Modello SVM per il dataset Terremoto Nepal.
 La pipeline usa:
 1. imputazione mediana di sicurezza;
 2. standardizzazione;
-3. PCA opzionale come decomposizione;
-4. classificatore SVM.
+3. classificatore SVM.
 
-La PCA resta disponibile per confronto, ma il default e' senza decomposizione:
-nei primi test sulla baseline preprocessata ha mantenuto piu' informazione utile
-e ha ottenuto macro-F1 migliore rispetto alla PCA.
+Per la classificazione multiclasse, il default usa LinearSVC: in scikit-learn
+questo corrisponde a una decomposizione One-vs-Rest / One-vs-All.
+L'opzione SVC con kernel RBF resta disponibile come confronto e usa One-vs-One.
 
 Le geo feature aggregate sono attive di default: gli ID geografici grezzi
 vengono prima trasformati in statistiche supervisionate anti-leakage, poi
@@ -26,7 +25,6 @@ import time
 from pathlib import Path
 
 import pandas as pd
-from sklearn.decomposition import PCA
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score
 from sklearn.model_selection import train_test_split
@@ -56,7 +54,7 @@ RANDOM_STATE = 42
 
 def parse_args() -> argparse.Namespace:
     """Legge i parametri da riga di comando per rendere lo script riusabile."""
-    parser = argparse.ArgumentParser(description="Addestra e valuta una SVM con PCA opzionale.")
+    parser = argparse.ArgumentParser(description="Addestra e valuta una SVM multiclasse.")
     parser.add_argument(
         "--dataset",
         type=Path,
@@ -80,18 +78,6 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.2,
         help="Quota di validation holdout. Default: 0.2.",
-    )
-    parser.add_argument(
-        "--decomposition",
-        choices=["pca", "none"],
-        default="none",
-        help="Metodo di decomposizione. Default: none; usa pca per confronto.",
-    )
-    parser.add_argument(
-        "--pca-components",
-        type=float,
-        default=0.95,
-        help="Con PCA: varianza cumulativa da mantenere se <=1, altrimenti numero componenti.",
     )
     parser.add_argument(
         "--estimator",
@@ -231,8 +217,6 @@ def validate_numeric_features(X: pd.DataFrame) -> list[str]:
 
 
 def build_svm_pipeline(
-    decomposition: str = "pca",
-    pca_components: float = 0.95,
     estimator: str = "linear_svc",
     c: float = 1.0,
     class_weight: str | None = "balanced",
@@ -240,8 +224,8 @@ def build_svm_pipeline(
     """Costruisce la pipeline sklearn per SVM.
 
     La standardizzazione e' obbligatoria per SVM, perche' distanze e margini
-    dipendono dalla scala delle feature. La PCA resta opzionale: nei test
-    iniziali non ha migliorato la macro-F1, quindi il default e' senza PCA.
+    dipendono dalla scala delle feature. Non viene applicata PCA: qui la
+    "decomposizione" rilevante e' quella multiclasse della SVM.
     """
     steps = [
         # Protezione extra: se nel dataset resta qualche NaN, la SVM non va in errore.
@@ -249,15 +233,11 @@ def build_svm_pipeline(
         ("scaler", StandardScaler()),
     ]
 
-    if decomposition == "pca":
-        n_components = int(pca_components) if pca_components > 1 else pca_components
-        steps.append(("pca", PCA(n_components=n_components, random_state=RANDOM_STATE)))
-
     # balanced pesa di piu' le classi minoritarie e aiuta la F1-macro.
     class_weight_param = None if class_weight == "none" else class_weight
 
     if estimator == "linear_svc":
-        # LinearSVC e' la baseline piu' veloce e stabile per dataset tabellari gia' one-hot.
+        # LinearSVC usa One-vs-Rest / One-vs-All per il problema multiclasse.
         svm_model = LinearSVC(
             C=c,
             class_weight=class_weight_param,
@@ -265,7 +245,7 @@ def build_svm_pipeline(
             random_state=RANDOM_STATE,
         )
     else:
-        # RBF puo' catturare relazioni non lineari, ma cresce molto di costo con le righe.
+        # SVC usa One-vs-One per il multiclasse; RBF e' piu' costoso ma non lineare.
         svm_model = SVC(
             C=c,
             class_weight=class_weight_param,
@@ -276,6 +256,13 @@ def build_svm_pipeline(
 
     steps.append(("svm", svm_model))
     return Pipeline(steps)
+
+
+def get_multiclass_strategy(estimator: str) -> str:
+    """Restituisce la decomposizione multiclasse usata dal classificatore SVM."""
+    if estimator == "linear_svc":
+        return "one_vs_rest"
+    return "one_vs_one"
 
 
 def evaluate_model(model: Pipeline, X_train, X_val, y_train, y_val) -> dict:
@@ -293,20 +280,6 @@ def evaluate_model(model: Pipeline, X_train, X_val, y_train, y_val) -> dict:
         "f1_macro": float(f1_score(y_val, y_pred, average="macro")),
         "balanced_accuracy": float(balanced_accuracy_score(y_val, y_pred)),
         "fit_seconds": round(float(fit_seconds), 2),
-    }
-
-
-def pca_report(model: Pipeline) -> dict:
-    """Restituisce informazioni sintetiche sulla PCA, se e' stata usata."""
-    if "pca" not in model.named_steps:
-        return {"enabled": False}
-
-    pca = model.named_steps["pca"]
-    return {
-        "enabled": True,
-        "n_components": int(pca.n_components_),
-        "explained_variance_sum": float(pca.explained_variance_.sum()),
-        "explained_variance_ratio_sum": float(pca.explained_variance_ratio_.sum()),
     }
 
 
@@ -349,8 +322,6 @@ def main() -> dict:
     feature_columns = validate_numeric_features(X_train)
 
     model = build_svm_pipeline(
-        decomposition=args.decomposition,
-        pca_components=args.pca_components,
         estimator=args.estimator,
         c=args.c,
         class_weight=args.class_weight,
@@ -365,13 +336,12 @@ def main() -> dict:
         "test_size": float(args.test_size),
         "estimator": args.estimator,
         "class_weight": args.class_weight,
-        "decomposition": args.decomposition,
+        "multiclass_strategy": get_multiclass_strategy(args.estimator),
         "geo_aggregate_enabled": not args.no_geo_aggregate,
         "raw_geo_ids_kept": bool(args.use_raw_geo_ids),
         "geo_smoothing": float(args.geo_smoothing),
         "geo_rare_threshold": int(args.geo_rare_threshold),
         "geo_n_splits": int(args.geo_n_splits),
-        "pca": pca_report(model),
         "scores": scores,
     }
 
@@ -382,12 +352,9 @@ def main() -> dict:
     print(f"Feature usate: {len(feature_columns)}")
     print(f"Estimator: {args.estimator}")
     print(f"Class weight: {args.class_weight}")
-    print(f"Decomposizione: {args.decomposition}")
+    print(f"Strategia multiclasse: {metrics['multiclass_strategy']}")
     print(f"Geo aggregate: {not args.no_geo_aggregate}")
     print(f"ID geo grezzi mantenuti: {args.use_raw_geo_ids}")
-    if metrics["pca"]["enabled"]:
-        print(f"Componenti PCA: {metrics['pca']['n_components']}")
-        print(f"Varianza spiegata PCA: {metrics['pca']['explained_variance_sum']:.6f}")
     print("\nMetriche validation:")
     print(pd.DataFrame([scores]).to_string(index=False))
     print(f"\nOutput salvato in: {args.output_dir}")
