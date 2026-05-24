@@ -360,6 +360,145 @@ def esegui_dbscan(df_scaled, eps, min_samples):
     
     return labels
 
+def rileva_outlier_dbscan(train_values, colonne_continue=COLONNE_CONTINUE):
+    """
+    Esegue outlier detection multivariato con DBSCAN e hyperparameter tuning
+    sul training set, restituendo una maschera booleana degli outlier.
+
+    A differenza di main(), questa funzione:
+    - Accetta i dati già caricati (non ricarica da file)
+    - Non esegue campionamento: elabora tutto il training set
+    - Restituisce la maschera outlier e le informazioni del modello
+      per l'integrazione nella pipeline di preprocessing del main
+
+    Args:
+        train_values: DataFrame del training set (già pulito)
+        colonne_continue: lista delle colonne continue su cui applicare DBSCAN
+
+    Returns:
+        tuple: (mask_outlier, info_dbscan)
+            - mask_outlier: pd.Series booleana (True = outlier), stesso index di train_values
+            - info_dbscan: dict con eps, min_samples, silhouette, n_clusters, n_outliers, ecc.
+    """
+    print("\n" + "=" * 80)
+    print("OUTLIER DETECTION MULTIVARIATO CON DBSCAN + HYPERPARAMETER TUNING")
+    print("=" * 80)
+
+    print(f"\nElaborazione dell'intero dataset: {len(train_values)} righe.")
+
+    colonne = [col for col in colonne_continue if col in train_values.columns]
+    X_num = train_values[colonne].copy()
+    print(f"Feature continue da utilizzare ({len(colonne)}): {colonne}")
+
+    if X_num.isna().any().any():
+        print("  Trovati valori mancanti: imputazione con mediana...")
+        X_num = X_num.fillna(X_num.median())
+
+    print("\nStandardizzazione dei dati (fondamentale per DBSCAN)...")
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X_num)
+
+    print("\nStima del range di eps tramite K-distance analysis...")
+    eps_min, eps_max, k_distances_dict = calcola_range_eps(X_scaled, MIN_SAMPLES_GRID)
+
+    eps_values = np.linspace(eps_min, eps_max, N_EPS_VALUES)
+    print(f"   Valori eps da testare: {[f'{v:.3f}' for v in eps_values]}")
+    print(f"   Valori min_samples da testare: {MIN_SAMPLES_GRID}")
+
+    output_dir = Path(__file__).resolve().parent
+    salva_k_distance_graph(k_distances_dict, output_dir)
+
+    print("\nGrid Search sugli iperparametri DBSCAN...")
+    start_gs = time.time()
+    risultati_df, miglior_comb = esegui_grid_search_dbscan(
+        X_scaled, eps_values, MIN_SAMPLES_GRID
+    )
+    tempo_gs = time.time() - start_gs
+
+    salva_risultati_grid_search(risultati_df, output_dir)
+
+    n_valide = risultati_df["valido"].sum()
+    n_totali = len(risultati_df)
+    print(f"\n{'=' * 80}")
+    print("RISULTATI GRID SEARCH DBSCAN")
+    print(f"{'=' * 80}")
+    print(f"   Combinazioni totali testate: {n_totali}")
+    print(f"   Combinazioni valide:         {n_valide}")
+    print(f"   Tempo totale Grid Search:    {tempo_gs:.1f}s")
+
+    if miglior_comb is None:
+        print("\n[!] Nessuna combinazione valida trovata!")
+        print("   Suggerimenti:")
+        print("   - Ampliare il range di OUTLIER_PCT_MIN / OUTLIER_PCT_MAX")
+        print("   - Modificare MIN_SAMPLES_GRID o N_EPS_VALUES")
+        print("   - Verificare i dati in input")
+        return pd.Series(False, index=train_values.index), {
+            "metodo": "dbscan",
+            "n_outliers": 0,
+            "nota": "nessuna combinazione valida trovata",
+        }
+
+    print(f"\n   [*] MIGLIORE COMBINAZIONE:")
+    print(f"      eps          = {miglior_comb['eps']:.4f}")
+    print(f"      min_samples  = {miglior_comb['min_samples']}")
+    print(f"      Silhouette   = {miglior_comb['silhouette']:.4f}")
+    print(f"      N. cluster   = {miglior_comb['n_clusters']}")
+    print(f"      Outlier      = {miglior_comb['n_outliers']} ({miglior_comb['pct_outliers']:.1f}%)")
+
+    validi = risultati_df[risultati_df["valido"] == True].sort_values(
+        "silhouette", ascending=False
+    ).head(5)
+    print(f"\n   Top 5 combinazioni:")
+    print(validi[["eps", "min_samples", "n_clusters", "pct_outliers", "silhouette"]].to_string(index=False))
+
+    print(f"\nApplicazione DBSCAN con i parametri ottimali...")
+    best_eps = miglior_comb["eps"]
+    best_min_samples = miglior_comb["min_samples"]
+    labels = esegui_dbscan(X_scaled, eps=best_eps, min_samples=best_min_samples)
+
+    mask_outlier = pd.Series(labels == -1, index=train_values.index)
+
+    # Profilo medio inlier vs outlier
+    temp_df = train_values[colonne].copy()
+    temp_df["is_outlier"] = mask_outlier.astype(int)
+    profilo = temp_df.groupby("is_outlier")[colonne].mean().round(2)
+    profilo.index = ["Inlier (0)", "Outlier (1)"]
+    print("\nProfilo medio (centri) per Inlier e Outlier:")
+    print(profilo.to_string())
+
+    # Salvataggio risultati su disco
+    out_file = output_dir / "dbscan_outliers.csv"
+    save_df = train_values[["building_id"] + colonne].copy()
+    save_df["dbscan_cluster"] = labels
+    save_df["is_outlier"] = mask_outlier.astype(int)
+    save_df.to_csv(out_file, index=False)
+    print(f"\nRisultati di clustering e flag outlier salvati in: {out_file}")
+
+    best_params_file = output_dir / "dbscan_best_params.txt"
+    with open(best_params_file, "w", encoding="utf-8") as f:
+        f.write("DBSCAN - Migliori Iperparametri (Grid Search)\n")
+        f.write("=" * 50 + "\n")
+        f.write(f"eps          = {best_eps:.4f}\n")
+        f.write(f"min_samples  = {best_min_samples}\n")
+        f.write(f"Silhouette   = {miglior_comb['silhouette']:.4f}\n")
+        f.write(f"N. cluster   = {miglior_comb['n_clusters']}\n")
+        f.write(f"N. outlier   = {miglior_comb['n_outliers']} ({miglior_comb['pct_outliers']:.1f}%)\n")
+    print(f"Migliori iperparametri salvati in: {best_params_file}")
+
+    info_dbscan = {
+        "metodo": "dbscan",
+        "eps": best_eps,
+        "min_samples": best_min_samples,
+        "silhouette": miglior_comb["silhouette"],
+        "n_clusters": miglior_comb["n_clusters"],
+        "n_outliers": int(mask_outlier.sum()),
+        "pct_outliers": miglior_comb["pct_outliers"],
+        "colonne_usate": colonne,
+    }
+
+    return mask_outlier, info_dbscan
+
+
 def main():
     print("=" * 80)
     print("OUTLIER DETECTION MULTIVARIATO CON DBSCAN + HYPERPARAMETER TUNING")

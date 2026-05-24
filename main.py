@@ -16,7 +16,9 @@ from src.preprocessing.imputation_strategies import (
     CODICE_STRATEGIA_DA_NOME_REPORT,
     applica_strategia_imputazione_colonna,
 )
-from src.preprocessing.outlier_detection.DBSCAN import main as dbscan_main
+# COMMENTATO: import originale, la pipeline DBSCAN è ora integrata nel flusso principale.
+# from src.preprocessing.outlier_detection.DBSCAN import main as dbscan_main
+from src.preprocessing.outlier_detection.DBSCAN import rileva_outlier_dbscan
 
 
 SHOW_DATA_QUALITY_PLOTS = False
@@ -124,15 +126,21 @@ def main():
     # =======================
     scelta_outlier = menu_outlier_detection()
 
-    if scelta_outlier == "2":
-        # Esegue la pipeline DBSCAN (caricamento dati, grid search, ecc.)
-        print("\n>> Avvio outlier detection con DBSCAN...\n")
-        dbscan_main()
-        print("\n>> Pipeline DBSCAN completata.")
-        return None
+    # COMMENTATO: la pipeline DBSCAN non interrompe più il flusso del main.
+    # Il metodo scelto viene applicato nella sezione OUTLIER DETECTION più avanti.
+    # if scelta_outlier == "2":
+    #     # Esegue la pipeline DBSCAN (caricamento dati, grid search, ecc.)
+    #     print("\n>> Avvio outlier detection con DBSCAN...\n")
+    #     dbscan_main()
+    #     print("\n>> Pipeline DBSCAN completata.")
+    #     return None
 
-    # Se si sceglie IQR (opzione 1), prosegue con la pipeline di preprocessing esistente
-    print("\n>> Proseguo con outlier detection IQR e preprocessing completo...\n")
+    # # Se si sceglie IQR (opzione 1), prosegue con la pipeline di preprocessing esistente
+    # print("\n>> Proseguo con outlier detection IQR e preprocessing completo...\n")
+    if scelta_outlier == "1":
+        print("\n>> Proseguo con outlier detection IQR e preprocessing completo...\n")
+    else:
+        print("\n>> Proseguo con outlier detection DBSCAN e preprocessing completo...\n")
 
     # =======================
     # CARICAMENTO DATI
@@ -170,10 +178,15 @@ def main():
     print(train_quality_report["outliers"])
 
     # =======================
-    # DATA QUALITY TEST
+    # DATA QUALITY TEST (senza analisi outlier)
     # =======================
     test_quality_handler = DataQualityHandler(test_values)
-    test_quality_report = test_quality_handler.esegui_controlli(plot=SHOW_DATA_QUALITY_PLOTS)
+    # COMMENTATO: l'analisi outlier sul test set non è significativa,
+    # perché l'outlier detection va fatta solo sul training set.
+    # test_quality_report = test_quality_handler.esegui_controlli(plot=SHOW_DATA_QUALITY_PLOTS)
+    test_quality_handler.pulisci_nomi_colonne()
+    test_quality_handler.controlla_duplicati_building_id()
+    test_quality_report = test_quality_handler.report
 
     # Aggiorno il dataframe con le modifiche effettuate nell'handler
     test_values = test_quality_handler.data
@@ -187,52 +200,86 @@ def main():
         upper_bound=age_upper_bound_train
     )
 
-
-    print("\n" + "=" * 80)
-    print("REPORT OUTLIER TEST SET")
-    print("=" * 80)
-    print(test_quality_report["outliers"])
+    # COMMENTATO: report outlier test set (outlier detection non applicata al test)
+    # print("\n" + "=" * 80)
+    # print("REPORT OUTLIER TEST SET")
+    # print("=" * 80)
+    # print(test_quality_report["outliers"])
 
     # =======================
-    # IMPUTAZIONE FEATURE NUMERICHE CON OUTLIER
+    # OUTLIER DETECTION E SOSTITUZIONE (solo TRAIN)
     # =======================
     missing_handler = MissingValuesHandler(null_threshold=70)
-    outliers_df = train_quality_report.get("outliers")
     colonne_numeriche = [col for col in COLONNE_CONTINUE if col in train_values.columns and col in test_values.columns]
     colonne_outlier = []
+    outlier_replacement_counts = {}
 
-    if outliers_df is not None:
-        for col in colonne_numeriche:
-            if col in outliers_df.index and float(outliers_df.loc[col, "n_outliers"]) > 0:
-                colonne_outlier.append(col)
+    if scelta_outlier == "1":
+        # --- METODO IQR (solo training set) ---
+        print("\n>> Outlier detection con IQR (solo training set)...\n")
+        outliers_df = train_quality_report.get("outliers")
+
+        if outliers_df is not None:
+            for col in colonne_numeriche:
+                if col in outliers_df.index and float(outliers_df.loc[col, "n_outliers"]) > 0:
+                    colonne_outlier.append(col)
+
+        for col in colonne_outlier:
+            lower_bound = float(outliers_df.loc[col, "lower_bound"])
+            upper_bound = float(outliers_df.loc[col, "upper_bound"])
+
+            train_values, n_sost_train = sostituisci_fuori_bound_con_nan(
+                train_values,
+                colonna=col,
+                lower_bound=lower_bound,
+                upper_bound=upper_bound,
+            )
+            # COMMENTATO: sostituzione outlier nel test set rimossa
+            # perché l'outlier detection va fatta solo sul training set.
+            # test_values, n_sost_test = sostituisci_fuori_bound_con_nan(
+            #     test_values,
+            #     colonna=col,
+            #     lower_bound=lower_bound,
+            #     upper_bound=upper_bound,
+            # )
+
+            outlier_replacement_counts[col] = {
+                "lower_bound_train": lower_bound,
+                "upper_bound_train": upper_bound,
+                "n_valori_sostituiti_train": n_sost_train,
+                # COMMENTATO: conteggio sostituzione test rimosso
+                # "n_valori_sostituiti_test": n_sost_test,
+            }
+
+    elif scelta_outlier == "2":
+        # --- METODO DBSCAN (solo training set, senza campionamento) ---
+        print("\n>> Outlier detection con DBSCAN (solo training set)...\n")
+        mask_outlier, info_dbscan = rileva_outlier_dbscan(train_values, COLONNE_CONTINUE)
+
+        n_outlier_totali = int(mask_outlier.sum())
+        if n_outlier_totali > 0:
+            # DBSCAN è multivariato: le righe outlier hanno valori anomali
+            # su tutte le feature continue, quindi le sostituiamo tutte con NaN
+            colonne_outlier = [col for col in colonne_numeriche]
+            for col in colonne_outlier:
+                n_nan_prima = int(train_values[col].isna().sum())
+                train_values.loc[mask_outlier, col] = pd.NA
+                n_nan_dopo = int(train_values[col].isna().sum())
+                n_sostituiti = n_nan_dopo - n_nan_prima
+
+                outlier_replacement_counts[col] = {
+                    "lower_bound_train": float("nan"),  # DBSCAN non usa bounds
+                    "upper_bound_train": float("nan"),  # DBSCAN non usa bounds
+                    "n_valori_sostituiti_train": n_sostituiti,
+                }
+
+            print(f"\nDBSCAN: {n_outlier_totali} righe outlier individuate.")
+            print(f"Colonne con valori sostituiti a NaN: {colonne_outlier}")
+        else:
+            print("\nDBSCAN: nessun outlier individuato.")
 
     if not colonne_outlier:
         print("\nNessuna feature numerica con outlier rilevati: nessuna imputazione outlier necessaria.")
-
-    outlier_replacement_counts = {}
-    for col in colonne_outlier:
-        lower_bound = float(outliers_df.loc[col, "lower_bound"])
-        upper_bound = float(outliers_df.loc[col, "upper_bound"])
-
-        train_values, n_sost_train = sostituisci_fuori_bound_con_nan(
-            train_values,
-            colonna=col,
-            lower_bound=lower_bound,
-            upper_bound=upper_bound,
-        )
-        test_values, n_sost_test = sostituisci_fuori_bound_con_nan(
-            test_values,
-            colonna=col,
-            lower_bound=lower_bound,
-            upper_bound=upper_bound,
-        )
-
-        outlier_replacement_counts[col] = {
-            "lower_bound_train": lower_bound,
-            "upper_bound_train": upper_bound,
-            "n_valori_sostituiti_train": n_sost_train,
-            "n_valori_sostituiti_test": n_sost_test,
-        }
 
     scelta_imputazione = menu_strategia_imputazione_outlier_numerici()
     risultati_knn = None
@@ -304,11 +351,21 @@ def main():
         print("\n" + "=" * 80)
         print(f"IMPUTAZIONE COLONNA '{col}' - {col_report['strategia'].upper()}")
         print("=" * 80)
-        print(
-            f"Valori fuori bound train [{col_report['lower_bound_train']:.2f}, {col_report['upper_bound_train']:.2f}] "
-            f"sostituiti con NaN - train: {col_report['n_valori_sostituiti_train']}, "
-            f"test: {col_report['n_valori_sostituiti_test']}"
-        )
+        # COMMENTATO: la stampa originale includeva bounds IQR e conteggio test.
+        # print(
+        #     f"Valori fuori bound train [{col_report['lower_bound_train']:.2f}, {col_report['upper_bound_train']:.2f}] "
+        #     f"sostituiti con NaN - train: {col_report['n_valori_sostituiti_train']}, "
+        #     f"test: {col_report['n_valori_sostituiti_test']}"
+        # )
+        if scelta_outlier == "1":
+            print(
+                f"Valori fuori bound train [{col_report['lower_bound_train']:.2f}, {col_report['upper_bound_train']:.2f}] "
+                f"sostituiti con NaN - train: {col_report['n_valori_sostituiti_train']}"
+            )
+        else:
+            print(
+                f"Valori outlier (DBSCAN) sostituiti con NaN - train: {col_report['n_valori_sostituiti_train']}"
+            )
         print(
             f"Missing {col} train prima/dopo: "
             f"{col_report['n_missing_train_prima']} -> {col_report['n_missing_train_dopo']}"
