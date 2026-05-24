@@ -48,7 +48,7 @@ TEST_SIZE = 0.20               # percentuale di validation set
 CV_FOLDS = 5                   # fold per la cross-validation
 SCORING = "f1_micro"           # metrica primaria della Grid Search
 RANDOM_STATE = 42
-N_JOBS = -1                    # usa tutti i core disponibili
+N_JOBS = 1                     # disabilita parallelizzazione (evita deadlock su Windows)
 
 
 # ---------------------------------------------------------------------------
@@ -92,13 +92,13 @@ def _get_algorithm_configs():
     configs.append({
         "name": "Random Forest",
         "pipeline": Pipeline([
-            ("clf", RandomForestClassifier(random_state=RANDOM_STATE, n_jobs=N_JOBS)),
+            ("clf", RandomForestClassifier(random_state=RANDOM_STATE, n_jobs=-1)),
         ]),
         "param_grid": {
-            "clf__n_estimators": [100, 200, 500],
-            "clf__max_depth": [None, 10, 20, 30],
-            "clf__min_samples_split": [2, 5, 10],
-            "clf__min_samples_leaf": [1, 2, 4],
+            "clf__n_estimators": [100, 300],
+            "clf__max_depth": [10, 20],
+            "clf__min_samples_split": [5, 10],
+            "clf__min_samples_leaf": [2, 4],
             "clf__max_features": ["sqrt", "log2"],
         },
     })
@@ -116,10 +116,10 @@ def _get_algorithm_configs():
         ]),
         "param_grid": {
             "clf__criterion": ["gini", "entropy"],
-            "clf__max_depth": [None, 5, 10, 15, 20, 30],
-            "clf__min_samples_split": [2, 5, 10, 20],
-            "clf__min_samples_leaf": [1, 2, 4, 8],
-            "clf__max_features": ["sqrt", "log2", None],
+            "clf__max_depth": [10, 20, 30],
+            "clf__min_samples_split": [5, 10],
+            "clf__min_samples_leaf": [2, 4],
+            "clf__max_features": ["sqrt", "log2"],
         },
     })
 

@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 
 
 class PCAHandler:
@@ -19,6 +20,7 @@ class PCAHandler:
     def __init__(self, n_components: Optional[int | float] = None):
         self.n_components = n_components
         self.pca = PCA(n_components=n_components)
+        self.scaler_ = StandardScaler()
         self.feature_columns_: list[str] = []
         self.fitted_: bool = False
 
@@ -96,7 +98,9 @@ class PCAHandler:
         self.feature_columns_ = [col for col in df.columns if col not in exclude_columns]
 
         X = self._prepare_matrix(df, self.feature_columns_)
-        self.pca.fit(X)
+        # Applica StandardScaler prima di PCA
+        X_scaled = self.scaler_.fit_transform(X)
+        self.pca.fit(X_scaled)
         self.fitted_ = True
         return self
 
@@ -117,7 +121,9 @@ class PCAHandler:
             raise ValueError(f"Colonne da preservare mancanti: {missing_preserve_cols}")
 
         X = self._prepare_matrix(df, self.feature_columns_)
-        X_pca = self.pca.transform(X)
+        # Applica lo StandardScaler e poi PCA
+        X_scaled = self.scaler_.transform(X)
+        X_pca = self.pca.transform(X_scaled)
 
         pca_columns = [f"PC{i+1}" for i in range(X_pca.shape[1])]
         pca_df = pd.DataFrame(X_pca, columns=pca_columns, index=df.index)

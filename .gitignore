@@ -63,3 +63,7 @@ experiments/*_diverse_selection.csv
 experiments/*_best_params.json
 experiments/*_tuning_results.csv
 Feature Selection/**/outputs/
+
+# Immagini e figure
+*.png
+outputs/figures/

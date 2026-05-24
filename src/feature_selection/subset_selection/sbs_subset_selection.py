@@ -14,6 +14,8 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
 
 @dataclass
@@ -128,17 +130,30 @@ class SequentialBackwardSelector:
         return x_encoded, y
 
     def _build_estimator(self):
+        """
+        Restituisce l'estimatore wrappato in una Pipeline con StandardScaler.
+        La standardizzazione è indispensabile per:
+        - KNN: le distanze euclidee dipendono dalla scala delle feature.
+        - LogisticRegression: la convergenza e i coefficienti dipendono dalla scala.
+        Allineato con sfs.py che usa make_pipeline(StandardScaler(), estimator).
+        """
         if self.estimator_name == "knn":
-            return KNeighborsClassifier(
-                n_neighbors=5,
-                weights="distance",
-                algorithm="brute",
-                n_jobs=-1,
+            return make_pipeline(
+                StandardScaler(),
+                KNeighborsClassifier(
+                    n_neighbors=5,
+                    weights="distance",
+                    algorithm="brute",
+                    n_jobs=-1,
+                ),
             )
 
-        return LogisticRegression(
-            max_iter=1200,
-            random_state=self.random_state,
+        return make_pipeline(
+            StandardScaler(),
+            LogisticRegression(
+                max_iter=1200,
+                random_state=self.random_state,
+            ),
         )
 
     def _score(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -154,6 +169,8 @@ class SequentialBackwardSelector:
         y_val: np.ndarray,
         feature_idx: np.ndarray,
     ) -> float:
+        # La Pipeline (StandardScaler + estimator) viene fittata sul train
+        # e applicata al val — nessun data leakage.
         estimator = self._build_estimator()
         estimator.fit(x_train[:, feature_idx], y_train)
         y_pred = estimator.predict(x_val[:, feature_idx])

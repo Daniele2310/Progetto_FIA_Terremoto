@@ -8,12 +8,17 @@ con --full-tuning).
 
 Pipeline eseguita:
     1. Caricamento del dataset preprocessato (DataPreprocessed).
-    2. Campionamento bilanciato per rendere equa la valutazione tra classi.
+    2. Campionamento STRATIFICATO (default) per rispettare la distribuzione
+       originale delle classi. Usa --sample-mode balanced per campionamento
+       bilanciato (sconsigliato: altera la distribuzione reale).
     3. Split stratificato train / validation (80 / 20).
-    4. Per ciascun metodo di Feature Selection:
+    4. Verifica distribuzione classi su train e val (deve essere coerente).
+    5. Per ciascun metodo di Feature Selection:
        a. Selezione delle feature secondo il metodo.
-       b. Hyperparameter tuning sulle feature selezionate via modulo modulare.
-    5. Report comparativo finale con classifica e top 3 metodi.
+       b. Log completo delle feature selezionate.
+       c. Hyperparameter tuning sulle feature selezionate via modulo modulare.
+    6. Report comparativo finale con classifica, top 3 metodi e tabella
+       riepilogativa delle feature selezionate per ogni metodo.
 """
 
 import argparse
@@ -61,7 +66,7 @@ EXCLUDE_COLS = ["building_id", "geo_level_1_id", "geo_level_2_id", "geo_level_3_
 RANDOM_STATE = 42
 
 # Valori di default per i parametri CLI
-DEFAULT_SAMPLE_MODE = "balanced"
+DEFAULT_SAMPLE_MODE = "stratified"   # rispetta la distribuzione originale del dataset
 DEFAULT_MAX_PER_CLASS = 10000
 DEFAULT_N_SAMPLES = 20000
 DEFAULT_MAX_FEATURES = 15
@@ -82,8 +87,9 @@ def parse_args():
         "--sample-mode",
         choices=["balanced", "stratified"],
         default=DEFAULT_SAMPLE_MODE,
-        help="Tipo di campionamento: 'balanced' (ugual numero per classe) o "
-             "'stratified' (proporzioni originali). Default: balanced.",
+        help="Tipo di campionamento: 'stratified' (default, rispetta le proporzioni "
+             "originali del dataset) o 'balanced' (ugual numero per classe, altera "
+             "la distribuzione reale — sconsigliato per benchmark realistici).",
     )
     parser.add_argument(
         "--max-per-class",
@@ -264,15 +270,16 @@ def _select_features(name, MethodClass, kwargs, X_train, y_train, df_train,
 # Stampa risultato singolo metodo
 # ---------------------------------------------------------------------------
 
-def _print_method_result(best, exec_time, n_features):
+def _print_method_result(best, exec_time, selected_features):
     """Stampa il riepilogo del risultato per un singolo metodo FS."""
+    n_features = len(selected_features)
     print(f"    Completato in {exec_time:.2f}s")
     print(f"    Algoritmo migliore : {best['Algoritmo']}")
     print(f"    F1-Micro Val       : {best['F1_Micro_Val']:.4f}")
     print(f"    F1-Micro CV        : {best['F1_Micro_CV']:.4f}")
     print(f"    Accuracy Val       : {best['Accuracy_Val']:.4f}")
     print(f"    Iperparametri      : {best['Migliori_Iperparametri']}")
-    print(f"    N. Feature         : {n_features}")
+    print(f"    N. Feature ({n_features:2d})    : {selected_features}")
 
 
 # ---------------------------------------------------------------------------
@@ -354,6 +361,27 @@ def run_evaluation(args=None):
     df_train = X_train.copy()
     df_train[TARGET_COL] = y_train
 
+    # Verifica distribuzione classi train / val
+    print("\n   Distribuzione classi TRAIN:")
+    train_dist = y_train.value_counts().sort_index()
+    train_pct  = y_train.value_counts(normalize=True).sort_index() * 100
+    for cls in train_dist.index:
+        print(f"     classe {cls}: {train_dist[cls]:5d}  ({train_pct[cls]:.1f}%)")
+
+    print("   Distribuzione classi VAL:")
+    val_dist = y_val.value_counts().sort_index()
+    val_pct  = y_val.value_counts(normalize=True).sort_index() * 100
+    for cls in val_dist.index:
+        print(f"     classe {cls}: {val_dist[cls]:5d}  ({val_pct[cls]:.1f}%)")
+
+    # Verifica coerenza: le % train e val devono essere simili
+    max_delta = max(abs(train_pct[c] - val_pct[c]) for c in train_dist.index)
+    if max_delta > 2.0:
+        print(f"   ATTENZIONE: differenza massima tra train e val = {max_delta:.1f}% "
+              "(stratificazione anomala).")
+    else:
+        print(f"   OK: distribuzione coerente (delta max = {max_delta:.1f}%)")
+
     # ── 5. Valutazione metodi FS ───────────────────────────────────────
     methods = _get_fs_methods()
     results = []
@@ -403,7 +431,7 @@ def run_evaluation(args=None):
                 print("    Nessuna feature valida trovata per la valutazione.")
                 continue
 
-            _print_method_result(best, exec_time, len(selected_features))
+            _print_method_result(best, exec_time, selected_features)
 
             results.append({
                 "Method": name,
@@ -446,14 +474,22 @@ def run_evaluation(args=None):
     print("\n\nI TOP 3 METODI DI FEATURE SELECTION:")
     for i in range(min(3, len(results_df))):
         row = results_df.iloc[i]
-        features_preview = row["Selected_Features"][:5]
-        suffix = "..." if len(row["Selected_Features"]) > 5 else ""
         print(f"\n  {i + 1}. {row['Method']}")
         print(f"     Valutato con: {row['Algoritmo']}")
         print(f"     F1-Micro Val: {row['F1_Micro_Val']:.4f} | CV: {row['F1_Micro_CV']:.4f}")
         print(f"     Accuracy: {row['Accuracy_Val']:.4f}")
         print(f"     Iperparametri: {row['Best_Params']}")
-        print(f"     Feature ({row['N_Features']}): {features_preview}{suffix}")
+        print(f"     N. Feature ({row['N_Features']}): {row['Selected_Features']}")
+
+    # Tabella riepilogativa feature selezionate per ogni metodo
+    print("\n" + "=" * 80)
+    print("FEATURE SELEZIONATE — TUTTI I METODI")
+    print("=" * 80)
+    for _, row in results_df.iterrows():
+        print(f"\n  [{row['Method']}]  ({row['N_Features']} feature, "
+              f"F1-Val={row['F1_Micro_Val']:.4f})")
+        for j, feat in enumerate(row["Selected_Features"], 1):
+            print(f"    {j:2d}. {feat}")
 
     # ── 7. Salvataggio ─────────────────────────────────────────────────
     output_path = project_root / "experiments" / "feature_selection_benchmark_rigorous.csv"
