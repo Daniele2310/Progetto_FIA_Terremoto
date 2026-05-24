@@ -72,9 +72,16 @@ def analizza_e_imputa(train_values, k):
         upper = float(outliers_df.loc[col, "upper_bound"])
         n_outliers = int(outliers_df.loc[col, "n_outliers"])
         perc_outliers = float(outliers_df.loc[col, "perc_outliers"])
+        metodo = outliers_df.loc[col, "metodo"] if "metodo" in outliers_df.columns else "iqr"
+        valori_anomali = outliers_df.loc[col, "valori_anomali"] if "valori_anomali" in outliers_df.columns else []
+        if not isinstance(valori_anomali, list):
+            valori_anomali = []
 
         # Sostituisci outlier con NaN
-        mask = (df[col] < lower) | (df[col] > upper)
+        if metodo == "rarity_iqr_zero" and valori_anomali:
+            mask = df[col].isin(valori_anomali)
+        else:
+            mask = (df[col] < lower) | (df[col] > upper)
         df.loc[mask, col] = np.nan
 
         # Imputa con mediana (strategia neutra per confronto equo)

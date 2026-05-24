@@ -173,12 +173,16 @@ def menu_scelta_modello() -> str:
 # UTILITY
 # ============================================================
 
-def sostituisci_fuori_bound_con_nan(df, colonna, lower_bound, upper_bound):
-    """Sostituisce con NaN i valori fuori dai bound [lower_bound, upper_bound]."""
+def sostituisci_outlier_con_nan(df, colonna, lower_bound, upper_bound, metodo="iqr", valori_anomali=None):
+    """Sostituisce con NaN gli outlier rilevati con IQR o rarita se IQR=0."""
     if colonna not in df.columns:
         return df, 0
     df_out = df.copy()
-    mask_outlier = (df_out[colonna] < lower_bound) | (df_out[colonna] > upper_bound)
+    if metodo == "rarity_iqr_zero" and valori_anomali:
+        mask_outlier = df_out[colonna].isin(valori_anomali)
+    else:
+        mask_outlier = (df_out[colonna] < lower_bound) | (df_out[colonna] > upper_bound)
+
     n_sostituiti = int(mask_outlier.sum())
     df_out.loc[mask_outlier, colonna] = pd.NA
     return df_out, n_sostituiti
@@ -332,17 +336,31 @@ def main():
         for col in colonne_outlier:
             lower_bound = float(outliers_df.loc[col, "lower_bound"])
             upper_bound = float(outliers_df.loc[col, "upper_bound"])
-            train_values, n_sost_train = sostituisci_fuori_bound_con_nan(
-                train_values, colonna=col,
-                lower_bound=lower_bound, upper_bound=upper_bound,
+            metodo_outlier = outliers_df.loc[col, "metodo"] if "metodo" in outliers_df.columns else "iqr"
+            valori_anomali = outliers_df.loc[col, "valori_anomali"] if "valori_anomali" in outliers_df.columns else []
+            if not isinstance(valori_anomali, list):
+                valori_anomali = []
+
+            train_values, n_sost_train = sostituisci_outlier_con_nan(
+                train_values,
+                colonna=col,
+                lower_bound=lower_bound,
+                upper_bound=upper_bound,
+                metodo=metodo_outlier,
+                valori_anomali=valori_anomali,
             )
             outlier_replacement_counts[col] = {
                 "lower_bound_train": lower_bound,
                 "upper_bound_train": upper_bound,
+                "metodo_outlier": metodo_outlier,
+                "valori_anomali_train": valori_anomali,
                 "n_valori_sostituiti_train": n_sost_train,
             }
-            print(f"  [{col}] bound=[{lower_bound:.2f}, {upper_bound:.2f}]  "
-                  f"outlier→NaN: {n_sost_train}")
+            print(
+                f"  [{col}] metodo={metodo_outlier} "
+                f"bound=[{lower_bound:.2f}, {upper_bound:.2f}]  "
+                f"outlier->NaN: {n_sost_train}"
+            )
 
     else:
         # --- DBSCAN ---

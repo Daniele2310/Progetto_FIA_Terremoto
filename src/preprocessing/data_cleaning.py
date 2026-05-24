@@ -50,7 +50,7 @@ class DataQualityHandler:
         print(f"\nNumero di building_id duplicati: {num_duplicati}")
         return num_duplicati
 
-    def analizza_outlier(self, colonne=COLONNE_CONTINUE, k=3.0):
+    def analizza_outlier(self, colonne=COLONNE_CONTINUE, k=3.0, soglia_rarita=0.005):
         """Analizza gli outlier nelle colonne selezionate usando il metodo IQR.
 
         Parametri
@@ -60,6 +60,9 @@ class DataQualityHandler:
         k : float, default=3.0
             Moltiplicatore IQR per definire i bound.
             Valori tipici: 1.5 (Tukey standard), 3.0 (Extreme IQR).
+        soglia_rarita : float, default=0.005
+            Soglia usata quando IQR=0: i valori con frequenza relativa sotto
+            questa soglia vengono marcati come outlier rari.
         """
         outliers_summary = {}
 
@@ -78,8 +81,6 @@ class DataQualityHandler:
                 frequenze = self.data[col].value_counts(normalize=True)
 
                 # 2. Definiamo una soglia di rarità rigorosa (es. meno dello 0.5% del dataset)
-                soglia_rarita = 0.005
-
                 # 3. Troviamo quali sono i valori "rari"
                 valori_anomali = frequenze[frequenze < soglia_rarita].index
 
@@ -89,8 +90,14 @@ class DataQualityHandler:
                 # Nota: lower e upper qui perdono di significato continuo,
                 # ma possiamo impostarli ai valori min/max non rari per compatibilità con il tuo dizionario
                 valori_normali = frequenze[frequenze >= soglia_rarita].index
-                lower = valori_normali.min()
-                upper = valori_normali.max()
+                if len(valori_normali) > 0:
+                    lower = valori_normali.min()
+                    upper = valori_normali.max()
+                else:
+                    lower = self.data[col].min()
+                    upper = self.data[col].max()
+                metodo = "rarity_iqr_zero"
+                valori_anomali_report = list(valori_anomali)
             else:
                 # Usiamo k * IQR per definire i bound
                 # k=1.5 è lo standard di Tukey, k=3.0 è l'Extreme IQR
@@ -99,6 +106,8 @@ class DataQualityHandler:
 
                 lower = max(0, lower)
                 mask_outliers = (self.data[col] < lower) | (self.data[col] > upper)
+                metodo = "iqr"
+                valori_anomali_report = []
 
             n_outliers = mask_outliers.sum()
             perc_outliers = mask_outliers.mean() * 100
@@ -110,10 +119,28 @@ class DataQualityHandler:
                 "lower_bound": lower,
                 "upper_bound": upper,
                 "n_outliers": n_outliers,
-                "perc_outliers": perc_outliers
+                "perc_outliers": perc_outliers,
+                "metodo": metodo,
+                "k": k,
+                "soglia_rarita": soglia_rarita if metodo == "rarity_iqr_zero" else None,
+                "valori_anomali": valori_anomali_report,
             }
 
-        outliers_df = pd.DataFrame(outliers_summary).T.round(2)
+        outliers_df = pd.DataFrame(outliers_summary).T
+        colonne_numeriche_report = [
+            "Q1",
+            "Q3",
+            "IQR",
+            "lower_bound",
+            "upper_bound",
+            "n_outliers",
+            "perc_outliers",
+            "k",
+            "soglia_rarita",
+        ]
+        for report_col in colonne_numeriche_report:
+            if report_col in outliers_df.columns:
+                outliers_df[report_col] = pd.to_numeric(outliers_df[report_col], errors="coerce").round(2)
         self.report["outliers"] = outliers_df
 
         return outliers_df
