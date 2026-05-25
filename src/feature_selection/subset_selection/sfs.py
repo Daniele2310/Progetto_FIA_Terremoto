@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -144,7 +144,7 @@ class SequentialForwardSelector:
             return float(f1_score(y_true, y_pred, average="micro"))
         return float(accuracy_score(y_true, y_pred))
 
-    def _evaluate_subset(
+    def _evaluate_subset_holdout(
         self,
         x_train: np.ndarray,
         y_train: np.ndarray,
@@ -156,6 +156,25 @@ class SequentialForwardSelector:
         estimator.fit(x_train[:, feature_idx], y_train)
         y_pred = estimator.predict(x_val[:, feature_idx])
         return self._score(y_val, y_pred)
+
+    def _evaluate_subset_cv(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        feature_idx: np.ndarray,
+        cv_strategy: StratifiedKFold,
+    ) -> float:
+        estimator = self._build_estimator()
+        scores = cross_val_score(
+            estimator,
+            x[:, feature_idx],
+            y,
+            cv=cv_strategy,
+            scoring=self.scoring,
+            n_jobs=1,
+            error_score="raise",
+        )
+        return float(np.mean(scores))
 
     @staticmethod
     def _theoretical_evaluations(initial_features: int, max_features: int) -> int:
@@ -187,6 +206,7 @@ class SequentialForwardSelector:
         y: np.ndarray,
         max_features: int = 15,
         test_size: float = 0.2,
+        cv_folds: int = 5,
         max_rows: Optional[int] = 30000,
         min_improvement: float = 0.0,
         max_steps: Optional[int] = None,
@@ -195,6 +215,8 @@ class SequentialForwardSelector:
             raise ValueError("max_features deve essere > 0")
         if not (0 < test_size < 1):
             raise ValueError("test_size deve stare in (0,1)")
+        if cv_folds <= 0:
+            raise ValueError("cv_folds deve essere >= 1")
         if max_rows is not None and max_rows <= 200:
             raise ValueError("max_rows deve essere > 200 oppure None")
         if max_steps is not None and max_steps <= 0:
@@ -216,21 +238,51 @@ class SequentialForwardSelector:
             sampling_applied = True
             sampled_rows = len(x_work)
 
-        x_train_df, x_val_df, y_train, y_val = train_test_split(
-            x_work,
-            y_work,
-            test_size=test_size,
-            random_state=self.random_state,
-            stratify=y_work,
-        )
-
         feature_names = x_work.columns.to_numpy()
-        x_train = x_train_df.to_numpy(dtype=float)
-        x_val = x_val_df.to_numpy(dtype=float)
-
-        total_features = x_train.shape[1]
+        x_array = x_work.to_numpy(dtype=float)
+        total_features = x_array.shape[1]
         if max_features > total_features:
             raise ValueError("max_features deve essere <= del numero di feature disponibili.")
+
+        evaluation_mode = "holdout" if cv_folds == 1 else "stratified_cv"
+        if evaluation_mode == "holdout":
+            x_train_df, x_val_df, y_train, y_val = train_test_split(
+                x_work,
+                y_work,
+                test_size=test_size,
+                random_state=self.random_state,
+                stratify=y_work,
+            )
+            x_train = x_train_df.to_numpy(dtype=float)
+            x_val = x_val_df.to_numpy(dtype=float)
+
+            def evaluate(feature_idx: np.ndarray) -> float:
+                return self._evaluate_subset_holdout(
+                    x_train,
+                    y_train,
+                    x_val,
+                    y_val,
+                    feature_idx,
+                )
+        else:
+            class_counts = pd.Series(y_work).value_counts()
+            if cv_folds > int(class_counts.min()):
+                raise ValueError(
+                    "cv_folds non puo superare la numerosita della classe minoritaria."
+                )
+            cv_strategy = StratifiedKFold(
+                n_splits=cv_folds,
+                shuffle=True,
+                random_state=self.random_state,
+            )
+
+            def evaluate(feature_idx: np.ndarray) -> float:
+                return self._evaluate_subset_cv(
+                    x_array,
+                    y_work,
+                    feature_idx,
+                    cv_strategy,
+                )
 
         all_idx = np.arange(total_features)
         current_idx = np.array([], dtype=int)
@@ -253,13 +305,7 @@ class SequentialForwardSelector:
             remaining = np.setdiff1d(all_idx, current_idx)
             for idx_add in remaining:
                 candidate_idx = np.sort(np.append(current_idx, idx_add))
-                candidate_score = self._evaluate_subset(
-                    x_train,
-                    y_train,
-                    x_val,
-                    y_val,
-                    candidate_idx,
-                )
+                candidate_score = evaluate(candidate_idx)
                 evaluated_models += 1
 
                 if candidate_score > best_score:
@@ -313,7 +359,9 @@ class SequentialForwardSelector:
             "n_features_initial": int(total_features),
             "n_features_final": int(len(selected_features)),
             "max_features_target": int(max_features),
-            "test_size": float(test_size),
+            "evaluation_mode": evaluation_mode,
+            "cv_folds": int(cv_folds),
+            "test_size": float(test_size) if evaluation_mode == "holdout" else None,
             "best_score_final": float(current_score),
             "n_steps_executed": int(len(history)),
             "evaluated_models": int(evaluated_models),
@@ -411,6 +459,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-features", type=int, default=15, help="Numero massimo di feature da selezionare.")
     parser.add_argument("--test-size", type=float, default=0.2, help="Quota del validation holdout.")
     parser.add_argument(
+        "--cv-folds",
+        type=int,
+        default=5,
+        help="Numero di fold per la valutazione interna del subset. Usa 1 per tornare all'holdout semplice.",
+    )
+    parser.add_argument(
         "--max-rows",
         type=int,
         default=30000,
@@ -469,6 +523,7 @@ def main() -> None:
         y=y,
         max_features=args.max_features,
         test_size=args.test_size,
+        cv_folds=args.cv_folds,
         max_rows=args.max_rows,
         min_improvement=args.min_improvement,
         max_steps=args.max_steps,
@@ -501,6 +556,7 @@ def main() -> None:
     print(f"Sorgente dati: {source_text}")
     print(f"Estimator: {summary['estimator']}")
     print(f"Scoring: {summary['scoring']}")
+    print(f"Protocollo valutazione: {summary['evaluation_mode']} (cv_folds={summary['cv_folds']})")
     print(f"Feature iniziali/finali: {summary['n_features_initial']} -> {summary['n_features_final']}")
     print(f"Score finale: {summary['best_score_final']:.6f}")
     print(f"Modelli valutati: {summary['evaluated_models']}")
