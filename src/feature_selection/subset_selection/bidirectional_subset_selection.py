@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -153,7 +153,7 @@ class StepwiseBidirectionalSelector:
         return make_pipeline(
             StandardScaler(),
             LogisticRegression(
-                max_iter=1200,
+                max_iter=3000,
                 random_state=self.random_state,
             ),
         )
@@ -163,7 +163,7 @@ class StepwiseBidirectionalSelector:
             return float(f1_score(y_true, y_pred, average="micro"))
         return float(accuracy_score(y_true, y_pred))
 
-    def _evaluate_subset(
+    def _evaluate_subset_holdout(
         self,
         x_train: np.ndarray,
         y_train: np.ndarray,
@@ -176,6 +176,25 @@ class StepwiseBidirectionalSelector:
         y_pred = estimator.predict(x_val[:, feature_idx])
         return self._score(y_val, y_pred)
 
+    def _evaluate_subset_cv(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        feature_idx: np.ndarray,
+        cv_strategy: StratifiedKFold,
+    ) -> float:
+        estimator = self._build_estimator()
+        scores = cross_val_score(
+            estimator,
+            x[:, feature_idx],
+            y,
+            cv=cv_strategy,
+            scoring=self.scoring,
+            n_jobs=1,
+            error_score="raise",
+        )
+        return float(np.mean(scores))
+
     def select(
         self,
         x: pd.DataFrame,
@@ -183,6 +202,7 @@ class StepwiseBidirectionalSelector:
         min_features: int = 1,
         max_features: Optional[int] = None,
         test_size: float = 0.2,
+        cv_folds: int = 5,
         max_rows: Optional[int] = 30000,
         min_improvement: float = 0.0,
         max_cycles: Optional[int] = None,
@@ -191,6 +211,8 @@ class StepwiseBidirectionalSelector:
             raise ValueError("min_features deve essere > 0")
         if not (0 < test_size < 1):
             raise ValueError("test_size deve stare in (0,1)")
+        if cv_folds <= 0:
+            raise ValueError("cv_folds deve essere >= 1")
         if max_rows is not None and max_rows <= 200:
             raise ValueError("max_rows deve essere > 200 oppure None")
         if max_cycles is not None and max_cycles <= 0:
@@ -212,24 +234,55 @@ class StepwiseBidirectionalSelector:
             sampling_applied = True
             sampled_rows = len(x_work)
 
-        x_train_df, x_val_df, y_train, y_val = train_test_split(
-            x_work,
-            y_work,
-            test_size=test_size,
-            random_state=self.random_state,
-            stratify=y_work,
-        )
-
         feature_names = x_work.columns.to_numpy()
-        x_train = x_train_df.to_numpy(dtype=float)
-        x_val = x_val_df.to_numpy(dtype=float)
-        total_features = x_train.shape[1]
+        x_array = x_work.to_numpy(dtype=float)
+        total_features = x_array.shape[1]
 
         if max_features is None:
             max_features = total_features
 
         if not (min_features <= max_features <= total_features):
             raise ValueError("Richiesto min_features <= max_features <= n_features_totali.")
+
+        evaluation_mode = "holdout" if cv_folds == 1 else "stratified_cv"
+        if evaluation_mode == "holdout":
+            x_train_df, x_val_df, y_train, y_val = train_test_split(
+                x_work,
+                y_work,
+                test_size=test_size,
+                random_state=self.random_state,
+                stratify=y_work,
+            )
+            x_train = x_train_df.to_numpy(dtype=float)
+            x_val = x_val_df.to_numpy(dtype=float)
+
+            def evaluate(feature_idx: np.ndarray) -> float:
+                return self._evaluate_subset_holdout(
+                    x_train,
+                    y_train,
+                    x_val,
+                    y_val,
+                    feature_idx,
+                )
+        else:
+            class_counts = pd.Series(y_work).value_counts()
+            if cv_folds > int(class_counts.min()):
+                raise ValueError(
+                    "cv_folds non puo superare la numerosita della classe minoritaria."
+                )
+            cv_strategy = StratifiedKFold(
+                n_splits=cv_folds,
+                shuffle=True,
+                random_state=self.random_state,
+            )
+
+            def evaluate(feature_idx: np.ndarray) -> float:
+                return self._evaluate_subset_cv(
+                    x_array,
+                    y_work,
+                    feature_idx,
+                    cv_strategy,
+                )
 
         all_idx = np.arange(total_features, dtype=int)
         current_idx = np.array([], dtype=int)
@@ -258,7 +311,7 @@ class StepwiseBidirectionalSelector:
                 remaining = np.setdiff1d(all_idx, current_idx)
                 for idx_add in remaining:
                     candidate_idx = np.sort(np.append(current_idx, idx_add))
-                    score = self._evaluate_subset(x_train, y_train, x_val, y_val, candidate_idx)
+                    score = evaluate(candidate_idx)
                     evaluated_models += 1
                     if score > forward_best_score:
                         forward_best_score = score
@@ -301,7 +354,7 @@ class StepwiseBidirectionalSelector:
                 for pos in range(len(current_idx)):
                     idx_remove = current_idx[pos]
                     candidate_idx = np.delete(current_idx, pos)
-                    score = self._evaluate_subset(x_train, y_train, x_val, y_val, candidate_idx)
+                    score = evaluate(candidate_idx)
                     evaluated_models += 1
                     if score > backward_best_score:
                         backward_best_score = score
@@ -352,7 +405,9 @@ class StepwiseBidirectionalSelector:
             "n_features_final": int(len(selected_features)),
             "min_features": int(min_features),
             "max_features": int(max_features),
-            "test_size": float(test_size),
+            "evaluation_mode": evaluation_mode,
+            "cv_folds": int(cv_folds),
+            "test_size": float(test_size) if evaluation_mode == "holdout" else None,
             "best_score_final": float(current_score),
             "n_cycles_executed": int(cycle),
             "n_steps_accepted": int(len(history_df)),
@@ -449,6 +504,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--test-size", type=float, default=0.2, help="Quota del validation holdout.")
     parser.add_argument(
+        "--cv-folds",
+        type=int,
+        default=5,
+        help="Numero di fold per la valutazione interna del subset. Usa 1 per tornare all'holdout semplice.",
+    )
+    parser.add_argument(
         "--max-rows",
         type=int,
         default=30000,
@@ -508,6 +569,7 @@ def main() -> None:
         min_features=args.min_features,
         max_features=args.max_features,
         test_size=args.test_size,
+        cv_folds=args.cv_folds,
         max_rows=args.max_rows,
         min_improvement=args.min_improvement,
         max_cycles=args.max_cycles,
@@ -539,6 +601,7 @@ def main() -> None:
     print(f"Sorgente dati: {source_text}")
     print(f"Estimator: {summary['estimator']}")
     print(f"Scoring: {summary['scoring']}")
+    print(f"Protocollo valutazione: {summary['evaluation_mode']} (cv_folds={summary['cv_folds']})")
     print(f"Feature iniziali/finali: {summary['n_features_initial']} -> {summary['n_features_final']}")
     print(f"Score finale: {summary['best_score_final']:.6f}")
     print(f"Modelli valutati: {summary['evaluated_models']}")

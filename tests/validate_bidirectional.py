@@ -75,6 +75,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Quota holdout interna usata dalla selection (solo protocol=outer-holdout).",
     )
     parser.add_argument(
+        "--selection-cv-folds",
+        type=int,
+        default=5,
+        help="Numero di fold per la valutazione interna della selection (solo protocol=outer-holdout). Usa 1 per holdout.",
+    )
+    parser.add_argument(
         "--selection-min-features",
         type=int,
         default=1,
@@ -180,6 +186,7 @@ def main() -> None:
             min_features=args.selection_min_features,
             max_features=args.selection_max_features,
             test_size=args.selection_test_size,
+            cv_folds=args.selection_cv_folds,
             max_rows=None,
             min_improvement=args.selection_min_improvement,
             max_cycles=args.selection_max_cycles,
