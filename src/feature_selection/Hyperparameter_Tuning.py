@@ -85,6 +85,8 @@ def _get_algorithm_configs():
 
     # ── 2. Random Forest ───────────────────────────────────────────────────
     #   - n_estimators      : numero di alberi nella foresta
+    #                         Range empirico [50, 150, 300, 500] per trovare plateauing della
+    #                         performance e evitare overfitting oltre 300.
     #   - max_depth          : profondita' massima di ciascun albero
     #   - min_samples_split  : campioni minimi per dividere un nodo
     #   - min_samples_leaf   : campioni minimi in una foglia
@@ -95,7 +97,7 @@ def _get_algorithm_configs():
             ("clf", RandomForestClassifier(random_state=RANDOM_STATE, n_jobs=-1)),
         ]),
         "param_grid": {
-            "clf__n_estimators": [100, 300],
+            "clf__n_estimators": [50, 150, 300, 500],
             "clf__max_depth": [10, 20],
             "clf__min_samples_split": [5, 10],
             "clf__min_samples_leaf": [2, 4],
