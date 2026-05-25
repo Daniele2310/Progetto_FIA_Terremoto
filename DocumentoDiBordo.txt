@@ -298,9 +298,9 @@ Luca - 21/04/2026
 REPORT BREVE - FEATURE RANKING PAIR-WISE (PEARSON, SENZA PCA)
 
 Sorgente risultati:
-- src.feature_selection/feature ranking/outputs/pairwise_ranking.csv
-- src.feature_selection/feature ranking/outputs/top_pairwise_correlated_pairs.csv
-- src.feature_selection/feature ranking/outputs/supervised_ranking.csv
+- src/feature_selection/feature_ranking/outputs/pairwise_ranking.csv
+- src/feature_selection/feature_ranking/outputs/top_pairwise_correlated_pairs.csv
+- src/feature_selection/feature_ranking/outputs/supervised_ranking.csv
 
 Nota sul preprocessing per questa analisi:
 - Analisi eseguita su feature originali (train_values + train_labels), senza componenti PCA.
@@ -366,11 +366,11 @@ Definizione usata:
 - Metodo applicato solo a feature discrete.
 
 Sorgente risultati:
-- src.feature_selection/feature ranking/outputs/uncertainty_information_gain_ranking.csv
-- src.feature_selection/feature ranking/outputs/uncertainty_summary.json
+- src/feature_selection/feature_ranking/outputs/uncertainty_information_gain_ranking.csv
+- src/feature_selection/feature_ranking/outputs/uncertainty_summary.json
 
 Impostazione run:
-- Dataset: Data/train_values.csv + Data/train_labels.csv
+- Dataset: Data/raw/train_values.csv + Data/raw/train_labels.csv
 - Target: damage_grade
 - Feature candidate: 38
 - Feature discrete usate: 38
@@ -418,13 +418,13 @@ Definizione operativa usata:
     e a differire tra campioni di classi diverse.
 
 Sorgente risultati:
-- src.feature_selection/feature ranking/outputs/relief_ranking.csv
-- src.feature_selection/feature ranking/outputs/relief_summary.csv
-- src.feature_selection/feature ranking/outputs/relief_top_features.csv
-- src.feature_selection/feature ranking/outputs/relief_top_features.png
+- src/feature_selection/feature_ranking/outputs/relief_ranking.csv
+- src/feature_selection/feature_ranking/outputs/relief_summary.csv
+- src/feature_selection/feature_ranking/outputs/relief_top_features.csv
+- src/feature_selection/feature_ranking/outputs/relief_top_features.png
 
 Impostazione run:
-- Dataset: Data/train_values.csv + Data/train_labels.csv
+- Dataset: Data/raw/train_values.csv + Data/raw/train_labels.csv
 - Target: damage_grade
 - One-hot encoding automatico sulle feature categoriche
 - Feature finali dopo encoding: 68
@@ -487,7 +487,7 @@ REPORT BREVE - SUBSET SELECTION (SBS)
 
 
 Impostazione run di validazione:
-- Dataset: Data/train_values.csv + Data/train_labels.csv
+- Dataset: Data/raw/train_values.csv + Data/raw/train_labels.csv
 - Target: damage_grade
 - One-hot encoding automatico sulle categoriche
 - Estimator di valutazione subset: KNN (weights=distance, algorithm=brute)
@@ -531,7 +531,7 @@ Obiettivo dell'intervento:
     concentrando la procedura in uno script dedicato.
 
 File implementato:
-- src.feature_selection/subset selection/sfs.py
+- src/feature_selection/subset_selection/sfs.py
 
 Definizione operativa usata:
 - SFS = Sequential Forward Selection.
@@ -582,7 +582,7 @@ Nota metodologica importante:
 
 Preprocessing applicato nello script:
 - Caricamento dataset di default da:
-    Data/train_values.csv + Data/train_labels.csv
+    Data/raw/train_values.csv + Data/raw/train_labels.csv
     oppure, se disponibile, da:
     DataPreprocessed/train_features_labels_preprocessed.csv
     oppure da CSV passato via --input.
@@ -608,10 +608,10 @@ Metriche supportate:
 - f1_micro
 
 Output finali prodotti:
-- src.feature_selection/subset selection/outputs/sfs_history.csv
-- src.feature_selection/subset selection/outputs/sfs_selected_features.csv
-- src.feature_selection/subset selection/outputs/sfs_summary.json
-- src.feature_selection/subset selection/outputs/sfs_score_history.png
+- src/feature_selection/subset_selection/outputs/sfs_history.csv
+- src/feature_selection/subset_selection/outputs/sfs_selected_features.csv
+- src/feature_selection/subset_selection/outputs/sfs_summary.json
+- src/feature_selection/subset_selection/outputs/sfs_score_history.png
 
 Contenuto degli output:
 - sfs_history.csv:
@@ -628,13 +628,13 @@ Contenuto degli output:
 
 Come verificare il funzionamento:
 - Esecuzione standard:
-    python "src.feature_selection\subset selection\sfs.py"
+    python "src\feature_selection\subset_selection\sfs.py"
 - Esecuzione con numero massimo di feature piu piccolo:
-    python "src.feature_selection\subset selection\sfs.py" --max-features 10
+    python "src\feature_selection\subset_selection\sfs.py" --max-features 10
 - Esecuzione con KNN come estimator:
-    python "src.feature_selection\subset selection\sfs.py" --estimator knn
+    python "src\feature_selection\subset_selection\sfs.py" --estimator knn
 - Esecuzione con metrica F1 micro:
-    python "src.feature_selection\subset selection\sfs.py" --scoring f1_micro
+    python "src\feature_selection\subset_selection\sfs.py" --scoring f1_micro
 
 Controlli di correttezza consigliati:
 - Verificare che in sfs_history.csv ogni step aumenti il numero di feature di 1.
@@ -698,7 +698,7 @@ Obiettivo dell'intervento:
     2) poco ridondanti rispetto alle feature gia selezionate.
 
 File implementato:
-- src.feature_selection/subset selection/max_min_subset_selection.py
+- src/feature_selection/subset_selection/max_min_subset_selection.py
 
 Definizione operativa usata:
 - Score(feature) = rilevanza(feature, target) - ridondanza(feature, selected_set)
@@ -721,7 +721,7 @@ Scelta implementativa:
 
 Preprocessing applicato nello script:
 - Caricamento dataset da:
-    Data/train_values.csv + Data/train_labels.csv
+    Data/raw/train_values.csv + Data/raw/train_labels.csv
     oppure, in alternativa, da CSV passato via --input.
 - Merge tra feature e label sul building_id.
 - Esclusione della colonna building_id dalla selezione.
@@ -729,9 +729,9 @@ Preprocessing applicato nello script:
 - Controllo di assenza di valori NaN prima dell'esecuzione del metodo.
 
 Output finali prodotti:
-- src.feature_selection/subset selection/outputs/max_min_selected_features.csv
-- src.feature_selection/subset selection/outputs/max_min_feature_correlation_matrix.csv
-- src.feature_selection/subset selection/outputs/max_min_summary.json
+- src/feature_selection/subset_selection/outputs/max_min_selected_features.csv
+- src/feature_selection/subset_selection/outputs/max_min_feature_correlation_matrix.csv
+- src/feature_selection/subset_selection/outputs/max_min_summary.json
 
 Contenuto degli output:
 - max_min_selected_features.csv:
@@ -746,11 +746,11 @@ Contenuto degli output:
 
 Come verificare il funzionamento:
 - Esecuzione standard con stop automatico su score negativo:
-    python "src.feature_selection\subset selection\max_min_subset_selection.py"
+    python "src\feature_selection\subset_selection\max_min_subset_selection.py"
 - Esecuzione con limite massimo di feature:
-    python "src.feature_selection\subset selection\max_min_subset_selection.py" --max-features 15
+    python "src\feature_selection\subset_selection\max_min_subset_selection.py" --max-features 15
 - Esecuzione senza stop su score negativo, utile per confronti con cardinalita fissa:
-    python "src.feature_selection\subset selection\max_min_subset_selection.py" --disable-negative-stop --max-features 15
+    python "src\feature_selection\subset_selection\max_min_subset_selection.py" --disable-negative-stop --max-features 15
 
 Controlli di correttezza consigliati:
 - Verificare che in max_min_selected_features.csv:
@@ -798,7 +798,7 @@ Obiettivo dell'intervento:
     seguendo l'idea vista a lezione per i metodi embedded con regolarizzazione L1.
 
 File implementato:
-- src.feature_selection/Embedded/lasso_feature_selection.py
+- src/feature_selection/embedded/lasso_feature_selection.py
 
 Idea metodologica:
 - Il Lasso minimizza una loss con un termine di penalizzazione L1 sui coefficienti:
@@ -863,7 +863,7 @@ Interazione utente aggiunta nello script:
 
 Preprocessing applicato nello script:
 - Caricamento dataset da:
-    Data/train_values.csv + Data/train_labels.csv
+    Data/raw/train_values.csv + Data/raw/train_labels.csv
     oppure, in alternativa, da CSV passato via --input.
 - Merge tra feature e label sul building_id.
 - Esclusione della colonna building_id dalla selezione.
@@ -872,9 +872,9 @@ Preprocessing applicato nello script:
 - Standardizzazione delle feature prima del fit del Lasso.
 
 Output finali prodotti:
-- src.feature_selection/Embedded/outputs/lasso_selected_features.csv
-- src.feature_selection/Embedded/outputs/lasso_all_coefficients.csv
-- src.feature_selection/Embedded/outputs/lasso_summary.json
+- src/feature_selection/embedded/outputs/lasso_selected_features.csv
+- src/feature_selection/embedded/outputs/lasso_all_coefficients.csv
+- src/feature_selection/embedded/outputs/lasso_summary.json
 
 Contenuto degli output:
 - lasso_selected_features.csv:
@@ -888,11 +888,11 @@ Contenuto degli output:
 
 Come verificare il funzionamento:
 - Esecuzione standard con scelta alpha via menu:
-    python "src.feature_selection\Embedded\lasso_feature_selection.py"
+    python "src\feature_selection\embedded\lasso_feature_selection.py"
 - Esecuzione con alpha fisso da CLI:
-    python "src.feature_selection\Embedded\lasso_feature_selection.py" --alpha 0.002
+    python "src\feature_selection\embedded\lasso_feature_selection.py" --alpha 0.002
 - Esecuzione con diverso numero di fold per LassoCV:
-    python "src.feature_selection\Embedded\lasso_feature_selection.py" --cv-folds 10
+    python "src\feature_selection\embedded\lasso_feature_selection.py" --cv-folds 10
 
 
 Risultati osservati nella prima run con scelta automatica (LassoCV):
@@ -941,7 +941,7 @@ Scelte implementative adottate:
 - Il blocco PCA nel main.py e stato ridotto al minimo indispensabile:
     creazione del PCAHandler, chiamata alla pipeline PCA e recupero dei risultati.
 - La logica principale della PCA e stata concentrata in:
-    src.feature_selection/Feature Ranking/PCA.py
+    src/feature_selection/feature_ranking/pca.py
 - Lo scree plot e stato mantenuto come unico grafico di supporto per la scelta
     del numero di componenti.
 - La scelta finale di n_components avviene manualmente dopo la visualizzazione
@@ -1153,19 +1153,19 @@ Logica implementata (allineata al metodo visto a lezione):
     alcun miglioramento (stop reason: nessun_miglioramento).
 
 File implementati:
-- src.feature_selection/subset selection/bidirectional_subset_selection.py
-- src.feature_selection/subset selection/validate_bidirectional.py
+- src/feature_selection/subset_selection/bidirectional_subset_selection.py
+- tests/validate_bidirectional.py
 
 Output prodotti:
-- src.feature_selection/subset selection/outputs/bidirectional_summary.json
-- src.feature_selection/subset selection/outputs/bidirectional_history.csv
-- src.feature_selection/subset selection/outputs/bidirectional_selected_features.csv
-- src.feature_selection/subset selection/outputs/bidirectional_score_history.png
-- src.feature_selection/subset selection/outputs/bidirectional_validation_metrics.json
-- src.feature_selection/subset selection/outputs/bidirectional_validation_metrics.csv
+- src/feature_selection/subset_selection/outputs/bidirectional_summary.json
+- src/feature_selection/subset_selection/outputs/bidirectional_history.csv
+- src/feature_selection/subset_selection/outputs/bidirectional_selected_features.csv
+- src/feature_selection/subset_selection/outputs/bidirectional_score_history.png
+- tests/outputs/bidirectional_validation_metrics.json
+- tests/outputs/bidirectional_validation_metrics.csv
 
 Impostazione run:
-- Dataset: Data/train_values.csv + Data/train_labels.csv
+- Dataset: Data/raw/train_values.csv + Data/raw/train_labels.csv
 - Target: damage_grade
 - One-hot encoding automatico sulle categoriche
 - Estimator: KNN (weights=distance, algorithm=brute)
@@ -1397,15 +1397,15 @@ Output dello script test_monotonia_fast.py:
   
 
 File test implementato:
-- src.feature_selection/test_monotonia_fast.py
+- tests/test_monotonia_fast.py
 
 Script di riferimento per verifica futura:
 - Esecuzione con default:
-    python "src.feature_selection/test_monotonia_fast.py"
+    python "tests/test_monotonia_fast.py"
 - Esecuzione con campione diverso:
-    python "src.feature_selection/test_monotonia_fast.py" --max-rows 10000
+    python "tests/test_monotonia_fast.py" --max-rows 10000
 - Esecuzione con piu trial:
-    python "src.feature_selection/test_monotonia_fast.py" --num-trials 50
+    python "tests/test_monotonia_fast.py" --num-trials 50
 
 
 

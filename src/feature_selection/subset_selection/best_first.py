@@ -46,6 +46,8 @@ class BestFirstSelector:
             patience: int = 5, # numero max. di espansioni senza miglioramento prima di fermarsi
             random_state: int = 42,
     ):
+        if patience <= 0:
+            raise ValueError("patience deve essere > 0.")
         self.patience = patience  # Corrisponde al "k" delle tue istruzioni
         self.random_state = random_state
 
@@ -63,6 +65,64 @@ class BestFirstSelector:
             return label.astype(int).to_numpy()
         codes, _ = pd.factorize(label, sort=True)
         return codes.astype(int)
+
+    @staticmethod
+    def _load_default_dataframe(project_root: Path) -> tuple[pd.DataFrame, str]:
+        train_values_path = project_root / "Data" / "raw" / "train_values.csv"
+        train_labels_path = project_root / "Data" / "raw" / "train_labels.csv"
+
+        if train_values_path.exists() and train_labels_path.exists():
+            train_values = pd.read_csv(train_values_path)
+            train_labels = pd.read_csv(train_labels_path)
+            merged = train_values.merge(train_labels, on="building_id", how="inner")
+            return merged, f"{train_values_path} + {train_labels_path}"
+
+        preprocessed_with_labels = (
+            project_root / "Data" / "preprocessed" / "train_features_labels_preprocessed.csv"
+        )
+        if preprocessed_with_labels.exists():
+            return pd.read_csv(preprocessed_with_labels), str(preprocessed_with_labels)
+
+        raise FileNotFoundError("Nessun dataset di default trovato. Usa --input per specificare un CSV.")
+
+    @staticmethod
+    def _prepare_features(
+        df: pd.DataFrame,
+        label_column: str,
+        exclude_columns: list[str],
+    ) -> tuple[pd.DataFrame, np.ndarray]:
+        if label_column not in df.columns:
+            raise ValueError(f"Colonna target non trovata: {label_column}")
+
+        excluded = set(exclude_columns)
+        excluded.add(label_column)
+
+        feature_candidates = [col for col in df.columns if col not in excluded]
+        if not feature_candidates:
+            raise ValueError("Nessuna feature candidata disponibile.")
+
+        x_raw = df[feature_candidates].copy()
+        y = BestFirstSelector._to_numeric_label(df[label_column])
+
+        categorical_cols = [
+            col
+            for col in x_raw.columns
+            if (
+                pd.api.types.is_object_dtype(x_raw[col])
+                or pd.api.types.is_string_dtype(x_raw[col])
+                or isinstance(x_raw[col].dtype, pd.CategoricalDtype)
+            )
+        ]
+
+        if categorical_cols:
+            x_encoded = pd.get_dummies(x_raw, columns=categorical_cols, drop_first=False, dtype=float)
+        else:
+            x_encoded = x_raw.astype(float)
+
+        if x_encoded.isnull().any().any():
+            raise ValueError("Best First richiede input senza NaN: completa imputazione/pulizia prima dell'uso.")
+
+        return x_encoded, y
 
     def _build_estimator(self): # serve per istanziare un Decision Tree
         # Utilizzo esclusivo del Decision Tree Classifier
@@ -102,6 +162,12 @@ class BestFirstSelector:
             y: np.ndarray,
             max_rows: Optional[int] = 20000,
     ) -> dict[str, object]:
+        if x.empty:
+            raise ValueError("Il dataframe delle feature e vuoto.")
+        if len(x) != len(y):
+            raise ValueError("Feature e target devono avere lo stesso numero di righe.")
+        if max_rows is not None and max_rows <= 200:
+            raise ValueError("max_rows deve essere > 200 oppure None.")
 
         # Preparazione Dati
         x_work, y_work = x.copy(), y.copy()
@@ -235,3 +301,147 @@ class BestFirstSelector:
             "history": history_df,
             "selected_features": selected_df,
         }
+
+    @staticmethod
+    def plot_history(
+        history_df: pd.DataFrame,
+        output_path: Optional[Path] = None,
+        show_plot: bool = False,
+    ) -> None:
+        if history_df.empty:
+            return
+
+        x_steps = history_df["step"].astype(int).tolist()
+        y_best = history_df["global_best_score"].astype(float).tolist()
+        y_expanded = history_df["score_of_expanded"].astype(float).tolist()
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(x_steps, y_best, marker="o", label="Best score globale")
+        plt.plot(x_steps, y_expanded, marker="x", linestyle="--", label="Score subset espanso")
+        plt.xlabel("Espansione")
+        plt.ylabel("Accuracy CV")
+        plt.title("Andamento Best First Search")
+        plt.grid(alpha=0.2)
+        plt.legend()
+        plt.tight_layout()
+
+        if output_path is not None:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            plt.savefig(output_path)
+
+        if show_plot:
+            plt.show()
+        else:
+            plt.close()
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Subset selection con Best First Search: espande i subset piu promettenti "
+            "e si ferma dopo k espansioni senza miglioramento globale."
+        )
+    )
+    parser.add_argument("--input", type=Path, default=None, help="CSV input con feature + target.")
+    parser.add_argument("--label-column", type=str, default="damage_grade", help="Nome colonna target.")
+    parser.add_argument(
+        "--exclude-columns",
+        nargs="*",
+        default=["building_id"],
+        help="Colonne da escludere dalla selezione.",
+    )
+    parser.add_argument(
+        "--patience",
+        type=int,
+        default=5,
+        help="Numero massimo di espansioni senza miglioramento globale prima dello stop.",
+    )
+    parser.add_argument(
+        "--max-rows",
+        type=int,
+        default=20000,
+        help="Numero massimo di righe usate per contenere il costo computazionale.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path(__file__).resolve().parent / "outputs",
+        help="Cartella di output per CSV/JSON/plot.",
+    )
+    parser.add_argument("--show-plots", action="store_true", help="Mostra plot oltre a salvarli.")
+    return parser
+
+
+def main() -> None:
+    parser = _build_parser()
+    args = parser.parse_args()
+
+    project_root = Path(__file__).resolve().parents[3]
+
+    if args.input is not None:
+        if not args.input.exists():
+            raise FileNotFoundError(f"File non trovato: {args.input}")
+        df = pd.read_csv(args.input)
+        source_text = str(args.input)
+    else:
+        df, source_text = BestFirstSelector._load_default_dataframe(project_root)
+
+    selector = BestFirstSelector(
+        patience=args.patience,
+        random_state=42,
+    )
+
+    x_encoded, y = selector._prepare_features(
+        df=df,
+        label_column=args.label_column,
+        exclude_columns=selector._normalize_columns(args.exclude_columns),
+    )
+
+    results = selector.select(
+        x=x_encoded,
+        y=y,
+        max_rows=args.max_rows,
+    )
+
+    summary = results["summary"]
+    history = results["history"]
+    selected = results["selected_features"]
+
+    assert isinstance(summary, dict)
+    assert isinstance(history, pd.DataFrame)
+    assert isinstance(selected, pd.DataFrame)
+
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    history.to_csv(args.output_dir / "best_first_history.csv", index=False)
+    selected.to_csv(args.output_dir / "best_first_selected_features.csv", index=False)
+    with open(args.output_dir / "best_first_summary.json", "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2)
+
+    selector.plot_history(
+        history_df=history,
+        output_path=args.output_dir / "best_first_score_history.png",
+        show_plot=args.show_plots,
+    )
+
+    print("\n" + "=" * 80)
+    print("SUBSET SELECTION - BEST FIRST COMPLETATA")
+    print("=" * 80)
+    print(f"Sorgente dati: {source_text}")
+    print(f"Feature iniziali/finali: {summary['n_features_initial']} -> {summary['n_features_final']}")
+    print(f"Score finale: {summary['best_score_final']:.6f}")
+    print(f"Modelli valutati: {summary['evaluated_models']}")
+    print(f"Tempo totale (s): {summary['elapsed_seconds']:.2f}")
+    print(f"Stop reason: {summary['stop_reason']}")
+    print(f"Patience: {summary['patience']}")
+    print(f"Output salvato in: {args.output_dir.resolve()}")
+
+    print("\nTop feature selezionate:")
+    print(selected.to_string(index=False))
+
+    if not history.empty:
+        print("\nUltimi 10 step Best First:")
+        print(history.tail(10).to_string(index=False))
+
+
+if __name__ == "__main__":
+    main()

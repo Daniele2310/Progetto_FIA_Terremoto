@@ -3,6 +3,7 @@ Test di monotonia VELOCIZZATO per il Branch-and-Bound.
 Versione rapida che usa un campione del dataset per verificare l'ipotesi.
 """
 
+import argparse
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -161,6 +162,21 @@ class FastMonotonicityTester:
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Test veloce dell'ipotesi di monotonia su un campione del dataset preprocessato."
+    )
+    parser.add_argument("--num-trials", type=int, default=20, help="Numero di confronti casuali subset vs subset esteso.")
+    parser.add_argument(
+        "--sample-size",
+        "--max-rows",
+        dest="sample_size",
+        type=int,
+        default=5000,
+        help="Numero massimo di righe campionate dal dataset per il test.",
+    )
+    parser.add_argument("--random-state", type=int, default=42, help="Seed per la riproducibilita'.")
+    args = parser.parse_args()
+
     current_file = Path(__file__).resolve()
     project_root = current_file.parents[1]
     
@@ -172,11 +188,15 @@ def main():
         print(f"✗ Errore: {e}")
         return
     
-    tester = FastMonotonicityTester(n_trials=20, sample_size=5000)
+    tester = FastMonotonicityTester(
+        random_state=args.random_state,
+        n_trials=args.num_trials,
+        sample_size=args.sample_size,
+    )
     result = tester.run(X, y)
     
     # Salva risultato
-    report_path = project_root / "src.feature_selection" / "outputs" / "monotonia_report_fast.txt"
+    report_path = project_root / "tests" / "outputs" / "monotonia_report_fast.txt"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     
     with open(report_path, 'w') as f:

@@ -64,8 +64,8 @@ class MaxMinSubsetSelector:
     @staticmethod
     def _load_default_dataframe(project_root: Path) -> tuple[pd.DataFrame, str]:
         """Carica il dataset di default dal progetto."""
-        train_values_path = project_root / "Data" / "train_values.csv"
-        train_labels_path = project_root / "Data" / "train_labels.csv"
+        train_values_path = project_root / "Data" / "raw" / "train_values.csv"
+        train_labels_path = project_root / "Data" / "raw" / "train_labels.csv"
 
         if train_values_path.exists() and train_labels_path.exists():
             train_values = pd.read_csv(train_values_path)
@@ -290,7 +290,7 @@ def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
 
-    project_root = Path(__file__).resolve().parents[2]
+    project_root = Path(__file__).resolve().parents[3]
 
     if args.input is not None:
         if not args.input.exists():
@@ -323,7 +323,11 @@ def main() -> None:
     assert isinstance(corr_matrix, pd.DataFrame)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    selected.to_csv(args.output_dir / "max_min_subset.csv", index=False)
+    selected_output_path = args.output_dir / "max_min_selected_features.csv"
+    legacy_selected_output_path = args.output_dir / "max_min_subset.csv"
+    selected.to_csv(selected_output_path, index=False)
+    # Alias legacy mantenuto per compatibilita' con output generati nelle run precedenti.
+    selected.to_csv(legacy_selected_output_path, index=False)
     corr_matrix.to_csv(args.output_dir / "max_min_feature_correlation_matrix.csv", index=True)
 
     with open(args.output_dir / "max_min_summary.json", "w", encoding="utf-8") as f:

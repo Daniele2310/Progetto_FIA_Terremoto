@@ -7,33 +7,18 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import sys
-import importlib.util
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.feature_selection.subset_selection.best_first import BestFirstSelector
 
 
 def carica_best_first_selector():
-    """Carica BestFirstSelector dalla stessa cartella in cui si trova questo script."""
-    # Visto che test e script sono nella stessa cartella, basta cercare "best_first.py" qui
-    module_path = Path(__file__).resolve().parent / "best_first.py"
-
-    if not module_path.exists():
-        raise FileNotFoundError(f"Modulo Best First non trovato: {module_path}")
-
-    spec = importlib.util.spec_from_file_location("best_first_module", module_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Impossibile caricare il modulo da: {module_path}")
-
-    module = importlib.util.module_from_spec(spec)
-
-    # Registra il modulo nel sistema per far funzionare le dataclass
-    import sys
-    sys.modules[spec.name] = module
-
-    spec.loader.exec_module(module)
-
-    if not hasattr(module, "BestFirstSelector"):
-        raise ImportError("Classe 'BestFirstSelector' non trovata nel modulo.")
-
-    return module.BestFirstSelector
+    """Restituisce BestFirstSelector dal modulo canonico del progetto."""
+    return BestFirstSelector
 
 
 def main():
@@ -41,7 +26,7 @@ def main():
     print("TEST BEST FIRST SEARCH - TERREMOTO NEPAL 2015")
     print("=" * 80)
 
-    # Caricamento dinamico della classe
+    # Caricamento della classe dal modulo canonico del progetto
     BestFirstSelector = carica_best_first_selector()
 
     # ==========================================
@@ -49,8 +34,8 @@ def main():
     # ==========================================
     print("\n[1/5] Caricamento dataset preprocessato...")
 
-    # Usa Path(__file__).resolve().parent per avere percorsi sicuri ovunque esegui lo script
-    project_root = Path(__file__).resolve().parents[2]
+    # Usa la root del progetto per avere percorsi sicuri ovunque esegui lo script
+    project_root = PROJECT_ROOT
     data_preprocessed_path = project_root / "Data" / "preprocessed" / "train_features_labels_preprocessed.csv"
 
     if not data_preprocessed_path.exists():
@@ -165,7 +150,7 @@ def main():
     print("SALVATAGGIO RISULTATI")
     print("=" * 80)
 
-    output_dir = project_root / "src.feature_selection" / "Best First Results"
+    output_dir = project_root / "tests" / "outputs" / "best_first_results"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Salva summary

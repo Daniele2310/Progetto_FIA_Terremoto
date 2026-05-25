@@ -77,8 +77,8 @@ class StepwiseBidirectionalSelector:
 
     @staticmethod
     def _load_default_dataframe(project_root: Path) -> tuple[pd.DataFrame, str]:
-        train_values_path = project_root / "Data" / "train_values.csv"
-        train_labels_path = project_root / "Data" / "train_labels.csv"
+        train_values_path = project_root / "Data" / "raw" / "train_values.csv"
+        train_labels_path = project_root / "Data" / "raw" / "train_labels.csv"
 
         if train_values_path.exists() and train_labels_path.exists():
             train_values = pd.read_csv(train_values_path)
@@ -480,7 +480,7 @@ def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
 
-    project_root = Path(__file__).resolve().parents[2]
+    project_root = Path(__file__).resolve().parents[3]
 
     if args.input is not None:
         if not args.input.exists():

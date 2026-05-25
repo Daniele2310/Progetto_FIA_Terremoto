@@ -45,10 +45,10 @@ Uno dei più grandi dataset post-disastro mai raccolti (260.601 campioni di trai
 ### File Disponibili
 | File | Descrizione |
 |------|-------------|
-| `Data/train_values.csv` | 260.601 edifici × 39 colonne (1 building_id + 38 feature) |
-| `Data/train_labels.csv` | Etichette di danno per i 260.601 edifici |
-| `Data/test_values.csv` | ~86.868 edifici da predire |
-| `Data/submission_format.csv` | Template CSV per le submissions |
+| `Data/raw/train_values.csv` | 260.601 edifici × 39 colonne (1 building_id + 38 feature) |
+| `Data/raw/train_labels.csv` | Etichette di danno per i 260.601 edifici |
+| `Data/raw/test_values.csv` | ~86.868 edifici da predire |
+| `Data/raw/submission_format.csv` | Template CSV per le submissions |
 
 ### Caratteristiche del Dataset
 

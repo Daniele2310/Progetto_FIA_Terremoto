@@ -244,7 +244,8 @@ def _select_features(name, MethodClass, kwargs, X_train, y_train, df_train,
     if "Ranker" in MethodClass.__name__:
         res = model.rank(df_train, label_column=TARGET_COL)
         if name == "Pairwise Correlation":
-            return res["supervised_ranking"]["feature"].head(max_features).tolist(), None
+            ranking_key = "combined_ranking" if "combined_ranking" in res else "supervised_ranking"
+            return res[ranking_key]["feature"].head(max_features).tolist(), None
         elif name == "Relief":
             return res["relief_ranking"]["feature"].head(max_features).tolist(), None
         elif name == "Information Gain":

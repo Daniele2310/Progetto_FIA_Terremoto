@@ -322,7 +322,7 @@ def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
 
-    project_root = Path(__file__).resolve().parents[2]
+    project_root = Path(__file__).resolve().parents[3]
 
     if args.input is not None:
         if not args.input.exists():

@@ -143,12 +143,17 @@ def load_dataset():
     return pd.read_csv(data_path)
 
 
-def load_feature_list(path, column, limit=None):
-    path = Path(path)
-    if not path.exists():
+def load_feature_list(paths, column, limit=None):
+    if isinstance(paths, (str, Path)):
+        candidate_paths = [Path(paths)]
+    else:
+        candidate_paths = [Path(path) for path in paths]
+
+    existing_path = next((path for path in candidate_paths if path.exists()), None)
+    if existing_path is None:
         return []
 
-    df = pd.read_csv(path)
+    df = pd.read_csv(existing_path)
     if column not in df.columns:
         return []
 
@@ -427,12 +432,19 @@ def build_feature_sets(
     sbs_max_steps=12,
 ):
     lasso_features = load_feature_list(
-        PROJECT_ROOT / "Feature Selection" / "Embedded" / "outputs" / "lasso_selected_features.csv",
+        [
+            PROJECT_ROOT / "src" / "feature_selection" / "embedded" / "outputs" / "lasso_selected_features.csv",
+            PROJECT_ROOT / "Feature Selection" / "Embedded" / "outputs" / "lasso_selected_features.csv",
+        ],
         column="feature",
         limit=top_k,
     )
     max_min_features = load_feature_list(
-        PROJECT_ROOT / "Feature Selection" / "subset selection" / "outputs" / "max_min_selected_features.csv",
+        [
+            PROJECT_ROOT / "src" / "feature_selection" / "subset_selection" / "outputs" / "max_min_selected_features.csv",
+            PROJECT_ROOT / "src" / "feature_selection" / "subset_selection" / "outputs" / "max_min_subset.csv",
+            PROJECT_ROOT / "Feature Selection" / "subset selection" / "outputs" / "max_min_selected_features.csv",
+        ],
         column="selected_feature",
     )
 

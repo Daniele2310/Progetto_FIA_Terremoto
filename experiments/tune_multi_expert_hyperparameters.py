@@ -54,7 +54,10 @@ def load_dataset():
 
 def build_feature_sets(X, top_k):
     lasso_features = load_feature_list(
-        PROJECT_ROOT / "Feature Selection" / "Embedded" / "outputs" / "lasso_selected_features.csv",
+        [
+            PROJECT_ROOT / "src" / "feature_selection" / "embedded" / "outputs" / "lasso_selected_features.csv",
+            PROJECT_ROOT / "Feature Selection" / "Embedded" / "outputs" / "lasso_selected_features.csv",
+        ],
         column="feature",
         limit=top_k,
     )

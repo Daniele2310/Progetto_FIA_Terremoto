@@ -34,7 +34,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--selected-features-path",
         type=Path,
-        default=Path(__file__).resolve().parent / "outputs" / "bidirectional_selected_features.csv",
+        default=(
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "feature_selection"
+            / "subset_selection"
+            / "outputs"
+            / "bidirectional_selected_features.csv"
+        ),
         help="CSV con colonna selected_feature (usato solo con protocol=same-split).",
     )
     parser.add_argument(
@@ -104,7 +111,7 @@ def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
 
-    project_root = Path(__file__).resolve().parents[2]
+    project_root = Path(__file__).resolve().parents[1]
 
     if args.input is not None:
         if not args.input.exists():
