@@ -1,9 +1,9 @@
 """
-Modello KNN per il dataset Terremoto Nepal con Hyperparameter Tuning.
+Modello Decision Tree per il dataset Terremoto Nepal con Hyperparameter Tuning.
 
 Utilizzo come funzione importabile:
-    from src.Modelli.knn import train_knn
-    results = train_knn(X_train, y_train, X_val, y_val)
+    from src.Modelli.decisiontree import train_decisiontree
+    results = train_decisiontree(X_train, y_train, X_val, y_val)
 """
 
 import sys
@@ -15,23 +15,23 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.feature_selection.Hyperparameter_Tuning import esegui_grid_search, get_knn_config
+from src.feature_selection.Hyperparameter_Tuning import esegui_grid_search, get_dt_config
 
 
 def validate_numeric_features(X: pd.DataFrame) -> list[str]:
-    """Controlla che tutte le feature passate al KNN siano numeriche."""
+    """Controlla che tutte le feature passate al Decision Tree siano numeriche."""
     feature_columns = X.columns.tolist()
     if not feature_columns:
-        raise ValueError("Nessuna feature disponibile per addestrare il KNN.")
+        raise ValueError("Nessuna feature disponibile per addestrare il Decision Tree.")
 
     non_numeric = [col for col in X.columns if not pd.api.types.is_numeric_dtype(X[col])]
     if non_numeric:
-        raise ValueError(f"Il KNN richiede feature numeriche. Colonne non numeriche: {non_numeric}")
+        raise ValueError(f"Decision Tree richiede feature numeriche. Colonne non numeriche: {non_numeric}")
 
     return feature_columns
 
 
-def train_knn(
+def train_decisiontree(
     X_train: pd.DataFrame,
     y_train: pd.Series,
     X_val: pd.DataFrame,
@@ -39,7 +39,7 @@ def train_knn(
     verbose: bool = True,
 ) -> dict:
     """
-    Addestra un modello KNN con hyperparameter tuning su dati preprocessati.
+    Addestra un modello Decision Tree con hyperparameter tuning su dati preprocessati.
 
     Args:
         X_train: feature di training (DataFrame)
@@ -57,19 +57,19 @@ def train_knn(
     """
     if verbose:
         print(f"\n{'='*80}")
-        print("MODELLO K-NEAREST NEIGHBORS (KNN)")
+        print("MODELLO DECISION TREE")
         print(f"{'='*80}")
 
     # Validazione
     feature_columns = validate_numeric_features(X_train)
 
-    # Ottieni configurazione KNN
-    knn_configs = get_knn_config()
-    if not knn_configs:
-        raise ValueError("Impossibile caricare la configurazione KNN.")
+    # Ottieni configurazione Decision Tree
+    dt_configs = get_dt_config()
+    if not dt_configs:
+        raise ValueError("Impossibile caricare la configurazione Decision Tree.")
 
     # Esegui grid search
-    risultati = esegui_grid_search(X_train, y_train, X_val, y_val, configs=knn_configs, verbose=verbose)
+    risultati = esegui_grid_search(X_train, y_train, X_val, y_val, configs=dt_configs, verbose=verbose)
 
     if not risultati:
         raise ValueError("Grid search non ha prodotto risultati.")
@@ -88,7 +88,7 @@ def train_knn(
 
     if verbose:
         print(f"\n{'='*80}")
-        print("RIEPILOGO FINALE KNN")
+        print("RIEPILOGO FINALE DECISION TREE")
         print(f"{'='*80}")
         print(f"Feature usate: {len(feature_columns)}")
         print(f"Accuracy: {metrics['accuracy']:.4f}")
