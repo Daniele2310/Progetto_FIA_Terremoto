@@ -12,9 +12,7 @@ Output:
 """
 
 import argparse
-import heapq
 import json
-import math
 import sys
 import time
 from pathlib import Path
@@ -26,8 +24,8 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.base import clone
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
-from sklearn.model_selection import cross_val_score, train_test_split
-from sklearn.neighbors import KNeighborsClassifier, NearestNeighbors
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.tree import DecisionTreeClassifier
@@ -37,6 +35,14 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.ensemble import MultiExpertSystem
+from src.feature_selection.embedded.lasso_feature_selection import LassoFeatureSelector
+from src.feature_selection.feature_ranking.relief_ranking import ReliefRanker
+from src.feature_selection.feature_ranking.uncertainty_information_gain_ranking import (
+    InformationGainRanker,
+)
+from src.feature_selection.subset_selection.best_first import BestFirstSelector
+from src.feature_selection.subset_selection.max_min_subset_selection import MaxMinSubsetSelector
+from src.feature_selection.subset_selection.sbs_subset_selection import SequentialBackwardSelector
 from src.preprocessing.data_selection import get_balanced_sample, get_stratified_sample
 
 
@@ -75,7 +81,13 @@ def parse_args():
         "--top-k",
         type=int,
         default=25,
-        help="Numero di feature da usare per i ranking Lasso, Relief e Information Gain.",
+        help="Numero massimo di feature da usare per Lasso, Relief, Information Gain e Max-Min.",
+    )
+    parser.add_argument(
+        "--lasso-alpha",
+        type=float,
+        default=0.002,
+        help="Alpha fisso usato dal Lasso embedded per costruire il feature set sul train split.",
     )
     parser.add_argument(
         "--relief-iterations",
@@ -94,6 +106,12 @@ def parse_args():
         type=int,
         default=1200,
         help="Righe massime usate internamente da Best First e SBS.",
+    )
+    parser.add_argument(
+        "--subset-cv-folds",
+        type=int,
+        default=5,
+        help="Numero di fold usati da SBS; usa 1 per il vecchio holdout.",
     )
     parser.add_argument(
         "--best-first-patience",
@@ -143,24 +161,6 @@ def load_dataset():
     return pd.read_csv(data_path)
 
 
-def load_feature_list(paths, column, limit=None):
-    if isinstance(paths, (str, Path)):
-        candidate_paths = [Path(paths)]
-    else:
-        candidate_paths = [Path(path) for path in paths]
-
-    existing_path = next((path for path in candidate_paths if path.exists()), None)
-    if existing_path is None:
-        return []
-
-    df = pd.read_csv(existing_path)
-    if column not in df.columns:
-        return []
-
-    values = df[column].dropna().astype(str).tolist()
-    return values[:limit] if limit else values
-
-
 def prepare_data(df):
     exclude = [col for col in EXCLUDE_COLS if col in df.columns]
     X = df.drop(columns=[TARGET_COL] + exclude)
@@ -173,288 +173,94 @@ def prepare_data(df):
     return X, y
 
 
-def minmax_scale(df):
-    min_values = df.min(axis=0)
-    ranges = (df.max(axis=0) - min_values).replace(0, 1.0)
-    return (df - min_values) / ranges
-
-
 def compute_relief_ranking(X_train, y_train, n_iterations=2000, n_neighbors_search=50):
-    X_scaled = minmax_scale(X_train).to_numpy(dtype=float)
-    y_array = y_train.to_numpy()
-    n_samples, n_features = X_scaled.shape
-
-    k = max(3, min(n_neighbors_search, n_samples))
-    nn = NearestNeighbors(n_neighbors=k, metric="euclidean", algorithm="auto")
-    nn.fit(X_scaled)
-    neighbor_indices = nn.kneighbors(X_scaled, return_distance=False)
-
-    rng = np.random.default_rng(RANDOM_STATE)
-    sampled_indices = rng.integers(0, n_samples, size=n_iterations)
-    weights = np.zeros(n_features, dtype=float)
-    valid_updates = 0
-
-    for sample_idx in sampled_indices:
-        current_label = y_array[sample_idx]
-        near_hit_idx = -1
-        near_miss_idx = -1
-
-        for neighbor_idx in neighbor_indices[sample_idx]:
-            if neighbor_idx == sample_idx:
-                continue
-            if y_array[neighbor_idx] == current_label and near_hit_idx == -1:
-                near_hit_idx = int(neighbor_idx)
-            if y_array[neighbor_idx] != current_label and near_miss_idx == -1:
-                near_miss_idx = int(neighbor_idx)
-            if near_hit_idx != -1 and near_miss_idx != -1:
-                break
-
-        if near_hit_idx == -1 or near_miss_idx == -1:
-            continue
-
-        diff_hit = X_scaled[sample_idx] - X_scaled[near_hit_idx]
-        diff_miss = X_scaled[sample_idx] - X_scaled[near_miss_idx]
-        weights += -(diff_hit * diff_hit) + (diff_miss * diff_miss)
-        valid_updates += 1
-
-    if valid_updates == 0:
-        raise ValueError("Relief non ha prodotto aggiornamenti validi.")
-
-    return (
-        pd.DataFrame(
-            {
-                "feature": X_train.columns,
-                "relief_weight": weights / float(valid_updates),
-            }
-        )
-        .sort_values("relief_weight", ascending=False, kind="stable")
-        .reset_index(drop=True)
+    train_df = X_train.copy()
+    train_df[TARGET_COL] = y_train.to_numpy()
+    ranker = ReliefRanker(random_state=RANDOM_STATE)
+    results = ranker.rank(
+        train_df,
+        label_column=TARGET_COL,
+        n_iterations=n_iterations,
+        n_neighbors_search=n_neighbors_search,
     )
-
-
-def entropy(series):
-    probabilities = series.value_counts(normalize=True)
-    return float(-(probabilities * probabilities.apply(lambda value: math.log(value, 2))).sum())
+    return results["relief_ranking"]
 
 
 def compute_information_gain_ranking(X_train, y_train):
-    rows = []
-    target_entropy = entropy(y_train)
-
-    for feature in X_train.columns:
-        series = X_train[feature]
-        is_discrete = (
-            pd.api.types.is_bool_dtype(series)
-            or pd.api.types.is_integer_dtype(series)
-            or series.nunique(dropna=True) <= 50
-        )
-        if not is_discrete:
-            continue
-
-        pair = pd.DataFrame({"target": y_train, "feature": series}).dropna()
-        conditional_entropy = 0.0
-        for _, group in pair.groupby("feature", dropna=False):
-            conditional_entropy += (len(group) / len(pair)) * entropy(group["target"])
-
-        rows.append(
-            {
-                "feature": feature,
-                "information_gain": max(0.0, target_entropy - conditional_entropy),
-                "n_unique_values": int(series.nunique(dropna=True)),
-            }
-        )
-
-    if not rows:
-        raise ValueError("Nessuna feature discreta disponibile per Information Gain.")
-
-    return (
-        pd.DataFrame(rows)
-        .sort_values("information_gain", ascending=False, kind="stable")
-        .reset_index(drop=True)
-    )
-
-
-def sample_for_subset_selection(X_train, y_train, max_rows):
-    if max_rows is None or len(X_train) <= max_rows:
-        return X_train.copy(), y_train.copy()
-
-    X_sub, _, y_sub, _ = train_test_split(
-        X_train,
-        y_train,
-        train_size=max_rows,
-        random_state=RANDOM_STATE,
-        stratify=y_train,
-    )
-    return X_sub.reset_index(drop=True), y_sub.reset_index(drop=True)
+    train_df = X_train.copy()
+    train_df[TARGET_COL] = y_train.to_numpy()
+    ranker = InformationGainRanker(log_base=2)
+    results = ranker.rank(train_df, label_column=TARGET_COL)
+    return results["information_gain_ranking"]
 
 
 def compute_best_first_subset(X_train, y_train, max_rows=1200, patience=3):
-    X_work, y_work = sample_for_subset_selection(X_train, y_train, max_rows)
-    feature_names = X_work.columns.to_numpy()
-    x_array = X_work.to_numpy(dtype=float)
-    y_array = y_work.to_numpy()
-    total_features = x_array.shape[1]
-
-    def evaluate(feature_idx):
-        if not feature_idx:
-            return 0.0
-        estimator = DecisionTreeClassifier(random_state=RANDOM_STATE)
-        scores = cross_val_score(
-            estimator,
-            x_array[:, list(feature_idx)],
-            y_array,
-            cv=3,
-            scoring="f1_micro",
-            n_jobs=-1,
-        )
-        return float(np.mean(scores))
-
-    open_list = []
-    closed_set = set()
-    best_score = -np.inf
-    best_subset = tuple()
-
-    for idx in range(total_features):
-        subset = (idx,)
-        score = evaluate(subset)
-        heapq.heappush(open_list, (-score, subset))
-        closed_set.add(subset)
-        if score > best_score:
-            best_score = score
-            best_subset = subset
-
-    expansions_without_improvement = 0
-    evaluated_models = total_features
-
-    while open_list and expansions_without_improvement < patience:
-        _, current_subset = heapq.heappop(open_list)
-        improved = False
-
-        for idx in range(total_features):
-            if idx in current_subset:
-                continue
-
-            new_subset = tuple(sorted(current_subset + (idx,)))
-            if new_subset in closed_set:
-                continue
-
-            closed_set.add(new_subset)
-            child_score = evaluate(new_subset)
-            evaluated_models += 1
-            heapq.heappush(open_list, (-child_score, new_subset))
-
-            if child_score > best_score:
-                best_score = child_score
-                best_subset = new_subset
-                improved = True
-
-        if improved:
-            expansions_without_improvement = 0
-        else:
-            expansions_without_improvement += 1
-
-    return [str(feature_names[idx]) for idx in best_subset], {
-        "score": best_score,
-        "evaluated_models": evaluated_models,
-        "n_rows_used": len(X_work),
-        "patience": patience,
-    }
-
-
-def compute_sbs_subset(X_train, y_train, min_features=20, max_rows=1200, max_steps=12):
-    X_work, y_work = sample_for_subset_selection(X_train, y_train, max_rows)
-    X_subtrain, X_subval, y_subtrain, y_subval = train_test_split(
-        X_work,
-        y_work,
-        test_size=0.2,
-        random_state=RANDOM_STATE,
-        stratify=y_work,
+    selector = BestFirstSelector(patience=patience, random_state=RANDOM_STATE)
+    results = selector.select(
+        X_train,
+        y_train.to_numpy(),
+        max_rows=max_rows,
     )
+    selected_features = results["selected_features"]["selected_feature"].astype(str).tolist()
+    return selected_features, results["summary"]
 
-    feature_names = X_work.columns.to_numpy()
-    x_train_array = X_subtrain.to_numpy(dtype=float)
-    x_val_array = X_subval.to_numpy(dtype=float)
-    y_train_array = y_subtrain.to_numpy()
-    y_val_array = y_subval.to_numpy()
-    current_idx = np.arange(len(feature_names))
 
-    def evaluate(feature_idx):
-        estimator = KNeighborsClassifier(
-            n_neighbors=5,
-            weights="distance",
-            algorithm="brute",
-            n_jobs=-1,
-        )
-        estimator.fit(x_train_array[:, feature_idx], y_train_array)
-        predictions = estimator.predict(x_val_array[:, feature_idx])
-        return float(f1_score(y_val_array, predictions, average="micro"))
-
-    current_score = evaluate(current_idx)
-    evaluated_models = 1
-    steps = 0
-
-    while len(current_idx) > min_features and steps < max_steps:
-        best_score = -np.inf
-        best_idx = None
-
-        for feature_pos in range(len(current_idx)):
-            candidate_idx = np.delete(current_idx, feature_pos)
-            candidate_score = evaluate(candidate_idx)
-            evaluated_models += 1
-
-            if candidate_score > best_score:
-                best_score = candidate_score
-                best_idx = candidate_idx
-
-        if best_idx is None or best_score < current_score:
-            break
-
-        current_idx = best_idx
-        current_score = best_score
-        steps += 1
-
-    return [str(feature_names[idx]) for idx in current_idx], {
-        "score": current_score,
-        "evaluated_models": evaluated_models,
-        "n_rows_used": len(X_work),
-        "steps": steps,
-    }
+def compute_sbs_subset(
+    X_train,
+    y_train,
+    min_features=20,
+    max_rows=1200,
+    max_steps=12,
+    cv_folds=5,
+):
+    selector = SequentialBackwardSelector(
+        estimator_name="knn",
+        scoring="f1_micro",
+        random_state=RANDOM_STATE,
+    )
+    results = selector.select(
+        X_train,
+        y_train.to_numpy(),
+        min_features=min_features,
+        max_rows=max_rows,
+        max_steps=max_steps,
+        cv_folds=cv_folds,
+    )
+    selected_features = results["selected_features"]["selected_feature"].astype(str).tolist()
+    return selected_features, results["summary"]
 
 
 def build_feature_sets(
     X_train,
     y_train,
     top_k=25,
+    lasso_alpha=0.002,
     relief_iterations=2000,
     subset_max_rows=1200,
+    subset_cv_folds=5,
     best_first_patience=3,
     sbs_min_features=20,
     sbs_max_steps=12,
 ):
-    lasso_features = load_feature_list(
-        [
-            PROJECT_ROOT / "src" / "feature_selection" / "embedded" / "outputs" / "lasso_selected_features.csv",
-            PROJECT_ROOT / "Feature Selection" / "Embedded" / "outputs" / "lasso_selected_features.csv",
-        ],
-        column="feature",
-        limit=top_k,
+    lasso_selector = LassoFeatureSelector(random_state=RANDOM_STATE)
+    lasso_results = lasso_selector.select(X_train, y_train, alpha=lasso_alpha)
+    lasso_features = (
+        lasso_results["selected_features"]["feature"].astype(str).head(top_k).tolist()
     )
-    max_min_features = load_feature_list(
-        [
-            PROJECT_ROOT / "src" / "feature_selection" / "subset_selection" / "outputs" / "max_min_selected_features.csv",
-            PROJECT_ROOT / "src" / "feature_selection" / "subset_selection" / "outputs" / "max_min_subset.csv",
-            PROJECT_ROOT / "Feature Selection" / "subset selection" / "outputs" / "max_min_selected_features.csv",
-        ],
-        column="selected_feature",
-    )
-
-    lasso_features = [feature for feature in lasso_features if feature in X_train.columns]
-    max_min_features = [feature for feature in max_min_features if feature in X_train.columns]
-
     if not lasso_features:
         lasso_features = X_train.columns.tolist()[:top_k]
+
+    max_min_selector = MaxMinSubsetSelector(random_state=RANDOM_STATE)
+    max_min_results = max_min_selector.select(
+        X_train,
+        y_train,
+        max_features=min(top_k, X_train.shape[1]),
+    )
+    max_min_features = (
+        max_min_results["selected_features"]["selected_feature"].astype(str).tolist()
+    )
     if not max_min_features:
-        max_min_features = lasso_features[: min(12, len(lasso_features))]
+        max_min_features = lasso_features[: min(top_k, len(lasso_features))]
 
     relief_ranking = compute_relief_ranking(
         X_train,
@@ -483,6 +289,7 @@ def build_feature_sets(
         min_features=sbs_min_features,
         max_rows=subset_max_rows,
         max_steps=sbs_max_steps,
+        cv_folds=subset_cv_folds,
     )
 
     return {
@@ -494,6 +301,8 @@ def build_feature_sets(
         "best_first": best_first_features,
         "sbs": sbs_features,
         "_summaries": {
+            "lasso": lasso_results["summary"],
+            "max_min": max_min_results["summary"],
             "best_first": best_first_summary,
             "sbs": sbs_summary,
         },
@@ -968,6 +777,9 @@ def main():
     print("=" * 80)
     print("MULTI-EXPERT SYSTEM - BENCHMARK")
     print("=" * 80)
+    print(f"Lasso alpha           : {args.lasso_alpha}")
+    print(f"SBS subset CV folds   : {args.subset_cv_folds}")
+    print(f"Subset max rows       : {args.subset_max_rows}")
 
     df = load_dataset()
     print(f"Dataset caricato: {df.shape[0]} righe x {df.shape[1]} colonne")
@@ -994,8 +806,10 @@ def main():
         X_train,
         y_train,
         top_k=args.top_k,
+        lasso_alpha=args.lasso_alpha,
         relief_iterations=args.relief_iterations,
         subset_max_rows=args.subset_max_rows,
+        subset_cv_folds=args.subset_cv_folds,
         best_first_patience=args.best_first_patience,
         sbs_min_features=args.sbs_min_features,
         sbs_max_steps=args.sbs_max_steps,
