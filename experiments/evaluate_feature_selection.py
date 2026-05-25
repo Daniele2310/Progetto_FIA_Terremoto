@@ -72,6 +72,7 @@ DEFAULT_N_SAMPLES = 20000
 DEFAULT_MAX_FEATURES = 15
 DEFAULT_MAX_ROWS_SUBSET = 2000
 DEFAULT_TEST_SIZE = 0.20
+DEFAULT_SUBSET_CV_FOLDS = 5
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +114,13 @@ def parse_args():
         "--max-rows-subset",
         type=int,
         default=DEFAULT_MAX_ROWS_SUBSET,
-        help="Righe massime per i subset selector (SBS, BestFirst). Default: 2000.",
+        help="Righe massime per i subset selector supervisionati per contenere il costo computazionale. Default: 2000.",
+    )
+    parser.add_argument(
+        "--subset-cv-folds",
+        type=int,
+        default=DEFAULT_SUBSET_CV_FOLDS,
+        help="Numero di fold per la valutazione interna di SFS/SBS/Bidirectional. Usa 1 per holdout semplice. Default: 5.",
     )
     parser.add_argument(
         "--test-size",
@@ -199,7 +206,8 @@ def _get_fs_methods():
 
 def _select_features(name, MethodClass, kwargs, X_train, y_train, df_train,
                      max_features=DEFAULT_MAX_FEATURES,
-                     max_rows_subset=DEFAULT_MAX_ROWS_SUBSET):
+                     max_rows_subset=DEFAULT_MAX_ROWS_SUBSET,
+                     subset_cv_folds=DEFAULT_SUBSET_CV_FOLDS):
     """
     Esegue la fase di selezione delle feature per un singolo metodo FS.
 
@@ -254,7 +262,8 @@ def _select_features(name, MethodClass, kwargs, X_train, y_train, df_train,
     # ── Subset selectors ───────────────────────────────────────────────
     if name == "Sequential Backward Selection":
         res = model.select(X_train, y_train.to_numpy(),
-                           min_features=max_features, max_rows=max_rows_subset)
+                           min_features=max_features, max_rows=max_rows_subset,
+                           cv_folds=subset_cv_folds)
     elif name == "Max-Min Subset Selection":
         res = model.select(X_train, y_train, max_features=max_features)
     elif name == "Best First Search":
@@ -262,7 +271,8 @@ def _select_features(name, MethodClass, kwargs, X_train, y_train, df_train,
         res = model.select(X_train, y_arr, max_rows=max_rows_subset)
     else:
         res = model.select(X_train, y_train.to_numpy(),
-                           max_features=max_features, max_rows=max_rows_subset)
+                           max_features=max_features, max_rows=max_rows_subset,
+                           cv_folds=subset_cv_folds)
 
     return res["selected_features"]["selected_feature"].tolist(), None
 
@@ -312,6 +322,7 @@ def run_evaluation(args=None):
     print(f"Campionamento         : {sample_label}")
     print(f"Max feature ranking   : {args.max_features}")
     print(f"Max righe subset sel. : {args.max_rows_subset}")
+    print(f"Subset CV folds       : {args.subset_cv_folds}")
     print(f"Test size             : {args.test_size}")
     print("=" * 80)
 
@@ -402,6 +413,7 @@ def run_evaluation(args=None):
                 name, MethodClass, kwargs, X_train, y_train, df_train,
                 max_features=args.max_features,
                 max_rows_subset=args.max_rows_subset,
+                subset_cv_folds=args.subset_cv_folds,
             )
 
             if not selected_features:

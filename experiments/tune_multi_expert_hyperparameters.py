@@ -25,7 +25,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from experiments.evaluate_multi_expert import load_feature_list, prepare_data
+from experiments.evaluate_multi_expert import prepare_data
+from src.feature_selection.embedded.lasso_feature_selection import LassoFeatureSelector
 from src.preprocessing.data_selection import get_balanced_sample, get_stratified_sample
 
 
@@ -41,6 +42,7 @@ def parse_args():
     parser.add_argument("--test-size", type=float, default=0.20)
     parser.add_argument("--cv-folds", type=int, default=3)
     parser.add_argument("--top-k", type=int, default=25)
+    parser.add_argument("--lasso-alpha", type=float, default=0.002)
     parser.add_argument("--n-jobs", type=int, default=-1)
     return parser.parse_args()
 
@@ -52,21 +54,17 @@ def load_dataset():
     return pd.read_csv(data_path)
 
 
-def build_feature_sets(X, top_k):
-    lasso_features = load_feature_list(
-        [
-            PROJECT_ROOT / "src" / "feature_selection" / "embedded" / "outputs" / "lasso_selected_features.csv",
-            PROJECT_ROOT / "Feature Selection" / "Embedded" / "outputs" / "lasso_selected_features.csv",
-        ],
-        column="feature",
-        limit=top_k,
+def build_feature_sets(X_train, y_train, top_k, lasso_alpha=0.002):
+    selector = LassoFeatureSelector(random_state=RANDOM_STATE)
+    results = selector.select(X_train, y_train, alpha=lasso_alpha)
+    lasso_features = (
+        results["selected_features"]["feature"].astype(str).head(top_k).tolist()
     )
-    lasso_features = [feature for feature in lasso_features if feature in X.columns]
     if not lasso_features:
-        lasso_features = X.columns.tolist()[:top_k]
+        lasso_features = X_train.columns.tolist()[:top_k]
 
     return {
-        "full": X.columns.tolist(),
+        "full": X_train.columns.tolist(),
         "lasso_top25": lasso_features,
     }
 
@@ -205,7 +203,6 @@ def main():
 
     print(f"Dataset tuning: {df_eval.shape[0]} righe")
     X, y = prepare_data(df_eval)
-    feature_sets = build_feature_sets(X, args.top_k)
 
     X_train, X_val, y_train, y_val = train_test_split(
         X,
@@ -213,6 +210,12 @@ def main():
         test_size=args.test_size,
         random_state=RANDOM_STATE,
         stratify=y,
+    )
+    feature_sets = build_feature_sets(
+        X_train,
+        y_train,
+        args.top_k,
+        lasso_alpha=args.lasso_alpha,
     )
 
     results = []
