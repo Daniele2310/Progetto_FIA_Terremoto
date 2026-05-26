@@ -78,6 +78,7 @@ def _banner(titolo: str) -> None:
 def applica_geo_embedding(
     train_values: pd.DataFrame,
     test_values: pd.DataFrame,
+    y_train: pd.Series,
     tipo: str = "aggregate",
     smoothing: float = 20.0,
     rare_threshold: int = 10,
@@ -87,8 +88,9 @@ def applica_geo_embedding(
     Applica geo embedding alle feature geografiche usando GeoFeatureEngineer.
     
     Args:
-        train_values: dataset di training con colonne geo_level_1/2/3 e damage_grade
+        train_values: dataset di training con colonne geo_level_1/2/3 (senza target)
         test_values: dataset di test con colonne geo_level_1/2/3
+        y_train: target di training (damage_grade)
         tipo: tipo di embedding ('aggregate' o 'neural' - attualmente solo aggregate)
         smoothing: parametro di smoothing per l'engineer
         rare_threshold: soglia per considerare un'area rara
@@ -103,12 +105,14 @@ def applica_geo_embedding(
     print(f"  Smoothing: {smoothing}")
     print(f"  Rare threshold: {rare_threshold}")
     
-    # Verifica che il target sia presente nel training
-    if "damage_grade" not in train_values.columns:
-        raise ValueError("damage_grade non trovato in train_values")
+    # Verifica che le colonne geo siano presenti
+    required_geo_cols = ("geo_level_1_id", "geo_level_2_id", "geo_level_3_id")
+    for col in required_geo_cols:
+        if col not in train_values.columns:
+            raise ValueError(f"{col} non trovato in train_values")
     
     geo_engineer = GeoFeatureEngineer(
-        geo_columns=("geo_level_1_id", "geo_level_2_id", "geo_level_3_id"),
+        geo_columns=required_geo_cols,
         target_col="damage_grade",
         smoothing=smoothing,
         rare_threshold=rare_threshold,
@@ -119,7 +123,7 @@ def applica_geo_embedding(
     
     # OOF sul train per evitare leakage
     print("\n  Costruzione geo-feature su TRAIN set (con OOF anti-leakage)...")
-    train_with_geo = geo_engineer.fit_transform_oof(train_values, train_values["damage_grade"])
+    train_with_geo = geo_engineer.fit_transform_oof(train_values, y_train)
     print(f"  ✓ Features aggiunte a TRAIN: {train_with_geo.shape[1] - train_values.shape[1]} nuove feature")
     
     # Transform su test
@@ -218,8 +222,13 @@ def esegui_feature_selection(
     
     if metodo == "relief":
         print(f"  Metodo: Relief Ranking (top {top_k})")
-        ranker = ReliefRanker(n_neighbors=5, n_iterations=100, random_state=42)
-        result = ranker.rank(X_train, label_column=y_train)
+        ranker = ReliefRanker(random_state=42)
+        
+        # Prepara DataFrame con y_train
+        X_temp = X_train.copy()
+        X_temp["__target__"] = y_train.values
+        
+        result = ranker.rank(X_temp, label_column="__target__")
         
         if "relief_ranking" in result:
             ranking_df = result["relief_ranking"]
@@ -227,6 +236,7 @@ def esegui_feature_selection(
             ranking_df = result.get(list(result.keys())[0])
         
         selected_features = ranking_df["feature"].head(top_k).tolist()
+        selected_features = [f for f in selected_features if f in X_train.columns]  # Filtra il target
         print(f"  ✓ Selezionate {len(selected_features)} feature con Relief")
         
     elif metodo == "info_gain":
@@ -404,9 +414,12 @@ def valuta_fs_dinamica_per_modello(
             
             # ── Relief ────────────────────────────────
             elif method_name == "Relief":
-                model = MethodClass(n_neighbors=5, n_iterations=50, random_state=42)
-                result = model.rank(X_sample, label_column=y_sample)
+                model = MethodClass(random_state=42)
+                X_temp = X_sample.copy()
+                X_temp["__target__"] = y_sample.values
+                result = model.rank(X_temp, label_column="__target__")
                 selected_features = result["relief_ranking"]["feature"].head(max_features).tolist()
+                selected_features = [f for f in selected_features if f in X_sample.columns]
             
             # ── Information Gain ──────────────────────
             elif method_name == "Information Gain":
@@ -1157,6 +1170,7 @@ def main():
         train_values, test_values = applica_geo_embedding(
             train_values=train_values,
             test_values=test_values,
+            y_train=train_labels["damage_grade"],
             tipo=tipo_geo_embedding,
             smoothing=20.0,
             rare_threshold=10,
@@ -1179,7 +1193,7 @@ def main():
     
     # Prepara X (tutte le feature tranne target e building_id)
     X_train_fs = train_values.drop(columns=["building_id"], errors="ignore")
-    y_train_fs = train_labels
+    y_train_fs = train_labels["damage_grade"]
     
     # Se automatica, valuta per il modello scelto
     if metodo_fs == "auto":
@@ -1225,7 +1239,7 @@ def main():
     risultati_modello = esegui_modello(
         scelta_modello=scelta_modello,
         train_values=train_values,
-        train_labels=train_labels,
+        train_labels=train_labels["damage_grade"],
         selected_features=selected_features,
     )
 
