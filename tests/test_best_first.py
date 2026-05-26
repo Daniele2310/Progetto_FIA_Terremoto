@@ -7,6 +7,8 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import sys
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, f1_score
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.feature_selection.subset_selection.best_first import BestFirstSelector
+from src.preprocessing.data_selection import get_stratified_sample
 
 
 def carica_best_first_selector():
@@ -32,7 +35,7 @@ def main():
     # ==========================================
     # 1. Caricamento Dataset
     # ==========================================
-    print("\n[1/5] Caricamento dataset preprocessato...")
+    print("\n[1/6] Caricamento dataset preprocessato...")
 
     # Usa la root del progetto per avere percorsi sicuri ovunque esegui lo script
     project_root = PROJECT_ROOT
@@ -47,23 +50,43 @@ def main():
     print(f"✓ Dataset caricato: {df.shape[0]} righe, {df.shape[1]} colonne")
 
     # ==========================================
-    # 2. Preparazione X e y
+    # 2. Campionamento Non Polarizzato (Stratificato)
     # ==========================================
-    print("\n[2/5] Preparazione X (features) e y (target)...")
-
-    # Rimuovi building_id e damage_grade
-    X = df.drop(columns=['building_id', 'damage_grade'])
-    y = df['damage_grade'].values
-
-    print(f"✓ X shape: {X.shape}")
-    print(f"✓ y shape: {y.shape}")
-    print(f"✓ Feature names: {list(X.columns[:5])}... (prime 5 di {len(X.columns)})")
-    print(f"✓ Target classes: {np.unique(y)}")
+    print("\n[2/6] Campionamento non polarizzato (stratificato)...")
+    
+    df_sampled = get_stratified_sample(
+        df, 
+        target_col='damage_grade',
+        n_samples=25000,  # Campione stratificato di 25k righe
+        random_state=42
+    )
+    print(f"✓ Dataset campionato: {df_sampled.shape[0]} righe")
+    print(f"✓ Distribuzione classi:\n{df_sampled['damage_grade'].value_counts().sort_index().to_string()}")
 
     # ==========================================
-    # 3. Istanziazione Best First Selector
+    # 3. Split Train / Validation (80/20)
     # ==========================================
-    print("\n[3/5] Configurazione Best First Search...")
+    print("\n[3/6] Split train / validation (80/20)...")
+    
+    X = df_sampled.drop(columns=['building_id', 'damage_grade'])
+    y = df_sampled['damage_grade'].astype(int)
+    
+    X_train, X_val, y_train, y_val = train_test_split(
+        X, y,
+        test_size=0.2,
+        random_state=42,
+        stratify=y
+    )
+    
+    print(f"✓ Train: {X_train.shape[0]} righe")
+    print(f"✓ Validation: {X_val.shape[0]} righe")
+    print(f"✓ Feature totali: {X_train.shape[1]}")
+    print(f"✓ Target classes: {np.unique(y_train)}")
+
+    # ==========================================
+    # 4. Istanziazione Best First Selector
+    # ==========================================
+    print("\n[4/6] Configurazione Best First Search...")
 
     selector = BestFirstSelector(
         patience=5,  # Fermarsi dopo 5 iterazioni senza miglioramento
@@ -73,21 +96,58 @@ def main():
     print(f"✓ Random state: {selector.random_state}")
 
     # ==========================================
-    # 4. Esecuzione Best First
+    # 5. Selezione Feature su TRAIN Set
     # ==========================================
-    print("\n[4/5] Esecuzione Best First Search...")
+    print("\n[5/6] Esecuzione Best First Search su TRAIN set...")
     print("(Questo potrebbe richiedere qualche minuto...)\n")
 
     result = selector.select(
-        x=X,
-        y=y,
-        max_rows=15000  # Usa max 15k righe per velocità
+        x=X_train,
+        y=y_train.to_numpy(),
+        max_rows=None  # Usa tutto il train set per la selezione
     )
 
     # ==========================================
-    # 5. Analisi Risultati
+    # 6. Valutazione su VALIDATION Set
     # ==========================================
-    print("\n[5/5] Analisi Risultati\n")
+    print("\n[6/6] Valutazione delle feature selezionate su VALIDATION set...\n")
+
+    selected_features_list = result['selected_features']['selected_feature'].tolist()
+    
+    if selected_features_list:
+        # Valuta il modello sulle feature selezionate
+        from sklearn.tree import DecisionTreeClassifier
+        from sklearn.metrics import classification_report
+        
+        model = DecisionTreeClassifier(random_state=42)
+        model.fit(X_train[selected_features_list], y_train)
+        y_pred = model.predict(X_val[selected_features_list])
+        
+        accuracy_val = accuracy_score(y_val, y_pred)
+        f1_val = f1_score(y_val, y_pred, average='micro')
+        
+        print(f"✓ Accuracy su Validation: {accuracy_val:.4f}")
+        print(f"✓ F1-Micro su Validation: {f1_val:.4f}")
+    else:
+        print("⚠ Nessuna feature selezionata!")
+        accuracy_val = 0.0
+        f1_val = 0.0
+
+    # ==========================================
+    # 7. Analisi Risultati
+    # ==========================================
+    print("\n" + "=" * 80)
+    print("RISULTATI FINALI")
+    print("=" * 80)
+    print("\n📋 FLUSSO DI VALIDATION CORRETTO:")
+    print(f"   1. Dataset campionato (stratificato): {df_sampled.shape[0]} righe")
+    print(f"   2. Split train: {X_train.shape[0]} righe ({100*X_train.shape[0]/(X_train.shape[0]+X_val.shape[0]):.0f}%)")
+    print(f"   3. Split validation: {X_val.shape[0]} righe ({100*X_val.shape[0]/(X_train.shape[0]+X_val.shape[0]):.0f}%)")
+    print(f"   4. Selezione feature: ADDESTRATA su train set")
+    print(f"   5. Valutazione modello: TESTATA su validation set")
+    print(f"   6. Accuracy su validation: {accuracy_val:.4f}")
+    print(f"   7. F1-Micro su validation: {f1_val:.4f}")
+    print("\n" + "=" * 80)
 
     # Summary
     summary = result['summary']
