@@ -29,6 +29,12 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
+try:
+    from tqdm import tqdm
+    TQDM_AVAILABLE = True
+except ImportError:
+    TQDM_AVAILABLE = False
+
 # ---------------------------------------------------------------------------
 # Configurazione del path di progetto
 # ---------------------------------------------------------------------------
@@ -49,6 +55,49 @@ CV_FOLDS = 5                   # fold per la cross-validation
 SCORING = "f1_micro"           # metrica primaria della Grid Search
 RANDOM_STATE = 42
 N_JOBS = 1                     # disabilita parallelizzazione (evita deadlock su Windows)
+
+
+# ---------------------------------------------------------------------------
+# Callback per monitorare il progresso di GridSearchCV
+# ---------------------------------------------------------------------------
+class ProgressCallback:
+    """Callback per tracciare il progresso durante GridSearchCV."""
+    
+    def __init__(self, total_fits, verbose=True):
+        self.total_fits = total_fits
+        self.verbose = verbose
+        self.current_fit = 0
+        self.start_time = time.time()
+        self.pbar = None
+        
+        if verbose and TQDM_AVAILABLE:
+            self.pbar = tqdm(total=total_fits, desc="GridSearch", unit="fit", 
+                           leave=True, position=0)
+    
+    def __call__(self, cv_results):
+        """Chiamato dopo ogni iterazione della GridSearch."""
+        self.current_fit += 1
+        if self.pbar:
+            self.pbar.update(1)
+            
+            # Aggiorna descrizione con best score finora
+            if "mean_test_score" in cv_results:
+                best_idx = np.argmax(cv_results["mean_test_score"])
+                best_score = cv_results["mean_test_score"][best_idx]
+                self.pbar.set_postfix({"best_score": f"{best_score:.4f}"})
+        
+        if self.verbose and not TQDM_AVAILABLE and self.current_fit % max(1, self.total_fits // 10) == 0:
+            elapsed = time.time() - self.start_time
+            rate = self.current_fit / elapsed if elapsed > 0 else 0
+            eta = (self.total_fits - self.current_fit) / rate if rate > 0 else 0
+            print(f"  Progress: {self.current_fit}/{self.total_fits} fit "
+                  f"({100*self.current_fit/self.total_fits:.0f}%) - "
+                  f"ETA: {eta:.0f}s", flush=True)
+    
+    def close(self):
+        """Chiude la barra di progresso."""
+        if self.pbar:
+            self.pbar.close()
 
 
 # ---------------------------------------------------------------------------
@@ -203,9 +252,6 @@ def esegui_grid_search(X_train, y_train, X_val, y_val, configs=None, verbose=Tru
     if configs is None:
         configs = _get_algorithm_configs()
 
-    cv_strategy = StratifiedKFold(
-        n_splits=CV_FOLDS, shuffle=True, random_state=RANDOM_STATE
-    )
     risultati = []
 
     for cfg in configs:
@@ -217,34 +263,51 @@ def esegui_grid_search(X_train, y_train, X_val, y_val, configs=None, verbose=Tru
         n_combinazioni = 1
         for values in param_grid.values():
             n_combinazioni *= len(values)
+        
+        total_fits = n_combinazioni * CV_FOLDS
 
         if verbose:
             print(f"\n{'=' * 80}")
             print(f"  {name}")
             print(f"  Combinazioni da valutare: {n_combinazioni} x {CV_FOLDS} fold = "
-                  f"{n_combinazioni * CV_FOLDS} fit totali")
+                  f"{total_fits} fit totali")
             print(f"{'=' * 80}")
 
         start = time.time()
 
+        # Crea la GridSearchCV con verbose=2 per stampare ogni fit
         grid = GridSearchCV(
             estimator=pipeline,
             param_grid=param_grid,
-            cv=cv_strategy,
+            cv=StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=RANDOM_STATE),
             scoring=SCORING,
             n_jobs=N_JOBS,
             refit=True,
-            verbose=1 if verbose else 0,
+            verbose=2 if verbose else 0,
             error_score="raise",
         )
 
+        # Callback per monitoraggio progresso
+        callback = ProgressCallback(total_fits, verbose=verbose) if verbose and TQDM_AVAILABLE else None
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
+            # Fit della GridSearch con stampa intermedia dei progressi
             grid.fit(X_train, y_train)
+            
+            # Stampa risultati intermedi durante il fitting
+            if verbose:
+                print(f"\n  ✓ Cross-validation completata")
+                print(f"    Miglior score CV: {grid.best_score_:.4f}")
+
+        if callback:
+            callback.close()
 
         tempo = time.time() - start
 
         # Predizione sul validation set
+        if verbose:
+            print(f"  Predizione sul validation set...")
         y_pred = grid.best_estimator_.predict(X_val)
         f1_val = f1_score(y_val, y_pred, average="micro")
         acc_val = accuracy_score(y_val, y_pred)

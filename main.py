@@ -355,6 +355,13 @@ def valuta_fs_dinamica_per_modello(
     else:
         X_sample, y_sample = X_train.copy(), y_train.copy()
     
+    # Filtra feature con varianza zero per evitare warning in correlazione
+    print(f"  Filtraggio feature con varianza zero...")
+    variance = X_sample.var()
+    features_nonzero_var = variance[variance > 1e-10].index.tolist()
+    X_sample_filtered = X_sample[features_nonzero_var].copy()
+    print(f"    ✓ Feature con varianza > 0: {len(features_nonzero_var)}/{len(X_sample.columns)}")
+    
     # Definisci i 10 metodi
     fs_methods = [
         ("PCA (Elbow)", PCAHandler, {}),
@@ -388,7 +395,7 @@ def valuta_fs_dinamica_per_modello(
             # ── PCA ────────────────────────────────────
             if method_name == "PCA (Elbow)":
                 model = MethodClass()
-                model.fit(X_sample, exclude_columns=[])
+                model.fit(X_sample_filtered, exclude_columns=[])
                 var_table = model.build_variance_table()
                 
                 y_var = var_table["explained_variance"].values
@@ -404,72 +411,81 @@ def valuta_fs_dinamica_per_modello(
                 
                 elbow_k = np.argmax(distances) + 1
                 selected_features = [f"PC{i}" for i in range(1, elbow_k + 1)]
-                X_sample_transformed = model.transform(X_sample).iloc[:, :elbow_k]
+                X_sample_transformed = model.transform(X_sample_filtered).iloc[:, :elbow_k]
                 pca_model = (X_sample_transformed, model)
             
             # ── Lasso Embedded ────────────────────────
             elif method_name == "Lasso Embedded":
-                model = MethodClass(alpha=0.002)
-                result = model.select(X_sample, y_sample)
+                model = MethodClass()
+                result = model.select(X_sample_filtered, y_sample)
                 selected_features = result["selected_features"]["feature"].head(max_features).tolist()
+                selected_features = [f for f in selected_features if f in X_sample.columns]
             
             # ── Pairwise Correlation ──────────────────
             elif method_name == "Pairwise Correlation":
                 model = MethodClass(**kwargs)
-                result = model.rank(X_sample, label_column=y_sample)
+                X_temp = X_sample_filtered.copy()
+                X_temp["__target__"] = y_sample.values
+                result = model.rank(X_temp, label_column="__target__")
                 ranking_key = "combined_ranking" if "combined_ranking" in result else "supervised_ranking"
                 selected_features = result[ranking_key]["feature"].head(max_features).tolist()
+                selected_features = [f for f in selected_features if f in X_sample_filtered.columns and f != "__target__"]
             
             # ── Relief ────────────────────────────────
             elif method_name == "Relief":
                 model = MethodClass(random_state=42)
-                X_temp = X_sample.copy()
+                X_temp = X_sample_filtered.copy()
                 X_temp["__target__"] = y_sample.values
                 result = model.rank(X_temp, label_column="__target__")
                 selected_features = result["relief_ranking"]["feature"].head(max_features).tolist()
-                selected_features = [f for f in selected_features if f in X_sample.columns]
+                selected_features = [f for f in selected_features if f in X_sample_filtered.columns]
             
             # ── Information Gain ──────────────────────
             elif method_name == "Information Gain":
                 model = InformationGainRanker(log_base=2)
-                X_temp = X_sample.copy()
+                X_temp = X_sample_filtered.copy()
                 X_temp["__target__"] = y_sample.values
                 result = model.rank(X_temp, label_column="__target__")
                 selected_features = result["information_gain_ranking"]["feature"].head(max_features).tolist()
-                selected_features = [f for f in selected_features if f in X_sample.columns]
+                selected_features = [f for f in selected_features if f in X_sample_filtered.columns]
             
             # ── Subset Selection methods ───────────────
             elif method_name == "SFS":
                 model = MethodClass(**kwargs)
-                res = model.select(X_sample, y_sample.to_numpy(),
+                res = model.select(X_sample_filtered, y_sample.to_numpy(),
                                    max_features=max_features, max_rows=max_rows_subset,
                                    cv_folds=subset_cv_folds)
                 selected_features = res["selected_features"]["selected_feature"].tolist()
+                selected_features = [f for f in selected_features if f in X_sample.columns]
             
             elif method_name == "SBS":
                 model = MethodClass(**kwargs)
-                res = model.select(X_sample, y_sample.to_numpy(),
+                res = model.select(X_sample_filtered, y_sample.to_numpy(),
                                    min_features=max_features, max_rows=max_rows_subset,
                                    cv_folds=subset_cv_folds)
                 selected_features = res["selected_features"]["selected_feature"].tolist()
+                selected_features = [f for f in selected_features if f in X_sample.columns]
             
             elif method_name == "Bidirectional":
                 model = MethodClass(**kwargs)
-                res = model.select(X_sample, y_sample.to_numpy(),
+                res = model.select(X_sample_filtered, y_sample.to_numpy(),
                                    max_features=max_features, max_rows=max_rows_subset,
                                    cv_folds=subset_cv_folds)
                 selected_features = res["selected_features"]["selected_feature"].tolist()
+                selected_features = [f for f in selected_features if f in X_sample.columns]
             
             elif method_name == "Max-Min":
                 model = MethodClass(**kwargs)
-                res = model.select(X_sample, y_sample)
+                res = model.select(X_sample_filtered, y_sample)
                 selected_features = res["selected_features"]["selected_feature"].tolist()
+                selected_features = [f for f in selected_features if f in X_sample.columns]
             
             elif method_name == "Best First":
                 model = MethodClass(**kwargs)
                 y_arr = y_sample.to_numpy() if isinstance(y_sample, pd.Series) else y_sample
-                res = model.select(X_sample, y_arr, max_rows=max_rows_subset)
+                res = model.select(X_sample_filtered, y_arr, max_rows=max_rows_subset)
                 selected_features = res["selected_features"]["selected_feature"].tolist()
+                selected_features = [f for f in selected_features if f in X_sample.columns]
             
             if not selected_features:
                 print(f"    ⚠️  {method_name} non ha selezionato feature, skip")
