@@ -13,8 +13,13 @@ MENU PRINCIPALE:
 """
 
 import io
+import sys
 from contextlib import redirect_stdout
 from pathlib import Path
+
+# Riconfigura l'encoding di stdout per supportare caratteri Unicode su Windows
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 import pandas as pd
 import numpy as np
@@ -38,6 +43,9 @@ from src.preprocessing.geo_features import GeoFeatureEngineer
 from src.Modelli.knn import train_knn
 from src.Modelli.randomforest import train_randomforest
 from src.Modelli.decisiontree import train_decisiontree
+
+# === Ensemble ===
+from src.ensemble.multi_expert_system import MultiExpertSystem, ExpertSpec
 
 # === Feature Selection ===
 from src.feature_selection.Hyperparameter_Tuning import (
@@ -748,6 +756,128 @@ def _stub_da_implementare(nome_sezione: str) -> None:
     print("  Verrà integrata nelle prossime iterazioni dello sviluppo.")
 
 
+def train_multi_expert_system(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    X_val: pd.DataFrame,
+    y_val: pd.Series,
+    verbose: bool = True,
+) -> dict:
+    """
+    Addestra un sistema multi-esperto con Random Forest, KNN e Decision Tree.
+    
+    Gli esperti vengono addestrati singolarmente, poi aggregati con weighted_mean.
+    
+    Args:
+        X_train: feature di training (DataFrame)
+        y_train: target di training (Series)
+        X_val: feature di validation (DataFrame)
+        y_val: target di validation (Series)
+        verbose: stampe a console
+        
+    Returns:
+        dict con chiavi:
+        - "model": modello MultiExpertSystem addestrato
+        - "best_params": dict con parametri degli esperti
+        - "metrics": metriche di valutazione
+        - "n_features": numero di feature utilizzate
+    """
+    if verbose:
+        print(f"\n{'='*80}")
+        print("MODELLO MULTI-ESPERTO (Random Forest + KNN + Decision Tree)")
+        print(f"{'='*80}\n")
+    
+    # Addestra gli esperti singolarmente per estrarre i modelli migliori
+    print("  Addestramento esperti singoli...")
+    
+    try:
+        rf_result = train_randomforest(X_train, y_train, X_val, y_val, verbose=False)
+        rf_f1 = rf_result.get('metrics', {}).get('f1_micro', 0)
+        print(f"    ✓ Random Forest addestrato (F1: {rf_f1:.4f})")
+    except Exception as e:
+        print(f"    ❌ Errore RF: {e}")
+        rf_result = None
+    
+    try:
+        knn_result = train_knn(X_train, y_train, X_val, y_val, verbose=False)
+        knn_f1 = knn_result.get('metrics', {}).get('f1_micro', 0)
+        print(f"    ✓ KNN addestrato (F1: {knn_f1:.4f})")
+    except Exception as e:
+        print(f"    ❌ Errore KNN: {e}")
+        knn_result = None
+    
+    try:
+        dt_result = train_decisiontree(X_train, y_train, X_val, y_val, verbose=False)
+        dt_f1 = dt_result.get('metrics', {}).get('f1_micro', 0)
+        print(f"    ✓ Decision Tree addestrato (F1: {dt_f1:.4f})")
+    except Exception as e:
+        print(f"    ❌ Errore DT: {e}")
+        dt_result = None
+    
+    # Crea il sistema multi-esperto
+    if not any([rf_result, knn_result, dt_result]):
+        raise ValueError("Nessun esperto è stato addestrato con successo.")
+    
+    experts = []
+    best_params = {}
+    
+    if rf_result:
+        experts.append(ExpertSpec(
+            name="Random Forest",
+            estimator=rf_result["model"],
+            weight=1.0
+        ))
+        best_params["rf"] = rf_result.get("best_params", {})
+    
+    if knn_result:
+        experts.append(ExpertSpec(
+            name="KNN",
+            estimator=knn_result["model"],
+            weight=1.0
+        ))
+        best_params["knn"] = knn_result.get("best_params", {})
+    
+    if dt_result:
+        experts.append(ExpertSpec(
+            name="Decision Tree",
+            estimator=dt_result["model"],
+            weight=1.0
+        ))
+        best_params["dt"] = dt_result.get("best_params", {})
+    
+    print(f"\n  Creazione sistema multi-esperto ({len(experts)} esperti)...")
+    multi_expert_system = MultiExpertSystem(experts, aggregation="weighted_mean")
+    multi_expert_system.fit(X_train, y_train)
+    print(f"  ✓ Sistema multi-esperto creato e addestrato")
+    
+    # Valutazione sul validation set
+    y_pred = multi_expert_system.predict(X_val)
+    f1_micro_val = f1_score(y_val, y_pred, average="micro", zero_division=0)
+    accuracy_val = accuracy_score(y_val, y_pred)
+    
+    if verbose:
+        print(f"\n  📊 Metriche su VALIDATION set:")
+        print(f"    - F1 Micro:              {f1_micro_val:.4f}")
+        print(f"    - Accuracy:              {accuracy_val:.4f}")
+        
+        # Mostra contributi esperti
+        diversity_df = multi_expert_system.diversity_report(X_val, y_val)
+        if not diversity_df.empty:
+            print(f"\n  🤝 Diversità tra esperti:")
+            print(f"    - Disagreement (media):  {diversity_df['disagreement'].mean():.4f}")
+            print(f"    - Double Fault (media):  {diversity_df['double_fault'].mean():.4f}")
+    
+    return {
+        "model": multi_expert_system,
+        "best_params": best_params,
+        "metrics": {
+            "f1_micro": f1_micro_val,
+            "accuracy": accuracy_val,
+        },
+        "n_features": X_train.shape[1],
+    }
+
+
 def esegui_modello(
     scelta_modello: str,
     train_values: pd.DataFrame,
@@ -775,10 +905,6 @@ def esegui_modello(
     """
     _banner("FASE 4 — ADDESTRAMENTO MODELLO")
     
-    if scelta_modello == "4":
-        _stub_da_implementare("Multi-Esperto (AdaBoost / SVM)")
-        return None
-
     # === Preparazione dati ===
     print(f"\n  Preparazione dati...")
     print(f"  Feature selezionate: {len(selected_features)}")
@@ -826,6 +952,11 @@ def esegui_modello(
         nome_modello = "Random Forest"
         print(f"\n  Addestramento: {nome_modello}")
         modello_info = train_randomforest(X_train, y_train, X_val, y_val, verbose=True)
+        
+    elif scelta_modello == "4":
+        nome_modello = "Multi-Esperto (Random Forest + KNN + Decision Tree)"
+        print(f"\n  Addestramento: {nome_modello}")
+        modello_info = train_multi_expert_system(X_train, y_train, X_val, y_val, verbose=True)
         
     else:
         print("  ERRORE: modello non riconosciuto.")
