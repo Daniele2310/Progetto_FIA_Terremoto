@@ -268,6 +268,52 @@ def esegui_feature_selection(
     return selected_features
 
 
+def _find_optimal_features_from_ranking(ranking_scores: pd.Series, max_features: int = 30) -> int:
+    """
+    Implementa knee-point detection per trovare il numero ottimale di feature da ranking.
+    
+    Invece di prendere sempre i top N, trova il punto dove il ranking score 
+    diminuisce bruscamente (elbow point).
+    
+    Args:
+        ranking_scores: Series con score per feature (sorted descending)
+        max_features: limite massimo di feature
+        
+    Returns:
+        numero ottimale di feature da selezionare (almeno 5, al massimo max_features)
+    """
+    scores = ranking_scores.values[:max_features]
+    
+    if len(scores) <= 2:
+        return len(scores)
+    
+    # Calcola le differenze tra punteggi consecutivi (sempre positive)
+    diffs = np.abs(np.diff(scores))
+    
+    # Normalizza le differenze
+    max_diff = np.max(diffs)
+    if max_diff > 0:
+        diffs_norm = diffs / max_diff
+    else:
+        return len(scores)
+    
+    # Trova il "gomito" - dove il drop è maggiore della media
+    mean_diff = np.mean(diffs_norm)
+    threshold = 1.5 * mean_diff
+    
+    # Seleziona il primo punto dove il drop è significativo (> 1.5x media)
+    elbow_indices = np.where(diffs_norm > threshold)[0]
+    
+    if len(elbow_indices) > 0:
+        optimal_k = elbow_indices[0] + 1
+    else:
+        # Se non trova un elbow chiaro, usa 60% di max_features
+        optimal_k = max(1, int(max_features * 0.6))
+    
+    # Almeno 5 feature, massimo max_features
+    return max(5, min(optimal_k, max_features))
+
+
 def valuta_fs_dinamica_per_modello(
     X_train: pd.DataFrame,
     y_train: pd.Series,
@@ -418,7 +464,13 @@ def valuta_fs_dinamica_per_modello(
             elif method_name == "Lasso Embedded":
                 model = MethodClass()
                 result = model.select(X_sample_filtered, y_sample)
-                selected_features = result["selected_features"]["feature"].head(max_features).tolist()
+                ranking_df = result["selected_features"].copy()
+                # Usa knee-point detection per trovare numero ottimale di feature
+                if len(ranking_df) > 0 and "score" in ranking_df.columns:
+                    optimal_k = _find_optimal_features_from_ranking(ranking_df["score"], max_features)
+                else:
+                    optimal_k = min(max_features, len(ranking_df))
+                selected_features = ranking_df["feature"].head(optimal_k).tolist()
                 selected_features = [f for f in selected_features if f in X_sample.columns]
             
             # ── Pairwise Correlation ──────────────────
@@ -428,7 +480,13 @@ def valuta_fs_dinamica_per_modello(
                 X_temp["__target__"] = y_sample.values
                 result = model.rank(X_temp, label_column="__target__")
                 ranking_key = "combined_ranking" if "combined_ranking" in result else "supervised_ranking"
-                selected_features = result[ranking_key]["feature"].head(max_features).tolist()
+                ranking_df = result[ranking_key].copy()
+                # Usa knee-point detection per trovare numero ottimale di feature
+                if len(ranking_df) > 0 and "score" in ranking_df.columns:
+                    optimal_k = _find_optimal_features_from_ranking(ranking_df["score"], max_features)
+                else:
+                    optimal_k = min(max_features, len(ranking_df))
+                selected_features = ranking_df["feature"].head(optimal_k).tolist()
                 selected_features = [f for f in selected_features if f in X_sample_filtered.columns and f != "__target__"]
             
             # ── Relief ────────────────────────────────
@@ -437,7 +495,13 @@ def valuta_fs_dinamica_per_modello(
                 X_temp = X_sample_filtered.copy()
                 X_temp["__target__"] = y_sample.values
                 result = model.rank(X_temp, label_column="__target__")
-                selected_features = result["relief_ranking"]["feature"].head(max_features).tolist()
+                ranking_df = result["relief_ranking"].copy()
+                # Usa knee-point detection per trovare numero ottimale di feature
+                if len(ranking_df) > 0 and "score" in ranking_df.columns:
+                    optimal_k = _find_optimal_features_from_ranking(ranking_df["score"], max_features)
+                else:
+                    optimal_k = min(max_features, len(ranking_df))
+                selected_features = ranking_df["feature"].head(optimal_k).tolist()
                 selected_features = [f for f in selected_features if f in X_sample_filtered.columns]
             
             # ── Information Gain ──────────────────────
@@ -446,31 +510,50 @@ def valuta_fs_dinamica_per_modello(
                 X_temp = X_sample_filtered.copy()
                 X_temp["__target__"] = y_sample.values
                 result = model.rank(X_temp, label_column="__target__")
-                selected_features = result["information_gain_ranking"]["feature"].head(max_features).tolist()
+                ranking_df = result["information_gain_ranking"].copy()
+                # Usa knee-point detection per trovare numero ottimale di feature
+                if len(ranking_df) > 0 and "score" in ranking_df.columns:
+                    optimal_k = _find_optimal_features_from_ranking(ranking_df["score"], max_features)
+                else:
+                    optimal_k = min(max_features, len(ranking_df))
+                selected_features = ranking_df["feature"].head(optimal_k).tolist()
                 selected_features = [f for f in selected_features if f in X_sample_filtered.columns]
             
             # ── Subset Selection methods ───────────────
             elif method_name == "SFS":
                 model = MethodClass(**kwargs)
+                # SFS cresce fino al limite naturale con early stopping intelligente
+                # min_improvement=0.001 ferma quando il miglioramento scende sotto 0.1%
                 res = model.select(X_sample_filtered, y_sample.to_numpy(),
-                                   max_features=max_features, max_rows=max_rows_subset,
-                                   cv_folds=subset_cv_folds)
+                                   max_features=None,  # Nessun limite fisso
+                                   max_rows=max_rows_subset,
+                                   cv_folds=subset_cv_folds,
+                                   min_improvement=0.001)  # Early stopping intelligente
                 selected_features = res["selected_features"]["selected_feature"].tolist()
                 selected_features = [f for f in selected_features if f in X_sample.columns]
             
             elif method_name == "SBS":
                 model = MethodClass(**kwargs)
+                # SBS reduce feature a partire da tutte, fino al limite naturale
+                # min_improvement=0.001 ferma quando il miglioramento scende sotto 0.1%
                 res = model.select(X_sample_filtered, y_sample.to_numpy(),
-                                   min_features=max_features, max_rows=max_rows_subset,
-                                   cv_folds=subset_cv_folds)
+                                   min_features=5,  # Non scendere sotto 5 feature
+                                   max_rows=max_rows_subset,
+                                   cv_folds=subset_cv_folds,
+                                   min_improvement=0.001)  # Early stopping intelligente
                 selected_features = res["selected_features"]["selected_feature"].tolist()
                 selected_features = [f for f in selected_features if f in X_sample.columns]
             
             elif method_name == "Bidirectional":
                 model = MethodClass(**kwargs)
+                # Bidirectional cresce e shrink liberamente verso l'ottimo
+                # min_improvement=0.001 ferma quando il miglioramento scende sotto 0.1%
                 res = model.select(X_sample_filtered, y_sample.to_numpy(),
-                                   max_features=max_features, max_rows=max_rows_subset,
-                                   cv_folds=subset_cv_folds)
+                                   min_features=5,  # Non scendere sotto 5 feature
+                                   max_features=None,  # Nessun limite massimo fisso
+                                   max_rows=max_rows_subset,
+                                   cv_folds=subset_cv_folds,
+                                   min_improvement=0.001)  # Early stopping intelligente
                 selected_features = res["selected_features"]["selected_feature"].tolist()
                 selected_features = [f for f in selected_features if f in X_sample.columns]
             

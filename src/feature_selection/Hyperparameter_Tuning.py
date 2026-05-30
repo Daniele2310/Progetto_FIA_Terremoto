@@ -60,44 +60,97 @@ N_JOBS = 1                     # disabilita parallelizzazione (evita deadlock su
 # ---------------------------------------------------------------------------
 # Callback per monitorare il progresso di GridSearchCV
 # ---------------------------------------------------------------------------
-class ProgressCallback:
-    """Callback per tracciare il progresso durante GridSearchCV."""
+class GridSearchLogger:
+    """Logger personalizzato per GridSearchCV con output in italiano."""
     
-    def __init__(self, total_fits, verbose=True):
+    # Traduzione dei nomi dei parametri
+    PARAM_NAMES_IT = {
+        "n_estimators": "N. Alberi",
+        "max_depth": "Prof. Massima",
+        "min_samples_split": "Camp. Min Split",
+        "min_samples_leaf": "Camp. Min Foglia",
+        "max_features": "Feature Per Split",
+        "n_neighbors": "N. Vicini",
+        "weights": "Pesi",
+        "metric": "Metrica Distanza",
+        "max_depth": "Profondità Max",
+    }
+    
+    PARAM_DESCRIPTIONS = {
+        "n_estimators": "numero di alberi decisionali nella foresta",
+        "max_depth": "profondità massima di ogni albero",
+        "min_samples_split": "campioni minimi per dividere un nodo",
+        "min_samples_leaf": "campioni minimi in una foglia",
+        "max_features": "numero di feature considerate per ogni split",
+        "n_neighbors": "numero di vicini da considerare",
+        "weights": "come pesare i vicini (uniforme o per distanza)",
+        "metric": "metrica di distanza (euclidea, manhattan, etc.)",
+    }
+    
+    def __init__(self, total_fits, n_params, verbose=True):
         self.total_fits = total_fits
+        self.n_params = n_params
         self.verbose = verbose
-        self.current_fit = 0
+        self.fit_count = 0
+        self.best_score = 0.0
+        self.best_params = None
         self.start_time = time.time()
         self.pbar = None
         
         if verbose and TQDM_AVAILABLE:
-            self.pbar = tqdm(total=total_fits, desc="GridSearch", unit="fit", 
-                           leave=True, position=0)
+            self.pbar = tqdm(
+                total=total_fits,
+                desc="⏳ Tuning Iperparametri",
+                unit=" fit",
+                leave=True,
+                position=0,
+                bar_format='{desc} |{bar}| {n_fmt}/{total_fmt} [{percentage:.0f}%] {postfix}'
+            )
     
-    def __call__(self, cv_results):
-        """Chiamato dopo ogni iterazione della GridSearch."""
-        self.current_fit += 1
-        if self.pbar:
-            self.pbar.update(1)
-            
-            # Aggiorna descrizione con best score finora
-            if "mean_test_score" in cv_results:
-                best_idx = np.argmax(cv_results["mean_test_score"])
-                best_score = cv_results["mean_test_score"][best_idx]
-                self.pbar.set_postfix({"best_score": f"{best_score:.4f}"})
+    def _format_params_italian(self, params_dict: dict) -> str:
+        """Formatta i parametri in italiano con descrizioni."""
+        output = []
+        for k, v in params_dict.items():
+            k_clean = k.replace("clf__", "").replace("scaler__", "")
+            k_it = self.PARAM_NAMES_IT.get(k_clean, k_clean)
+            output.append(f"{k_it}={v}")
+        return " • ".join(output)
+    
+    def finalize(self, best_score, best_params_dict):
+        """Finalizza il logger e stampa i risultati in italiano."""
+        self.best_score = best_score
+        self.best_params = best_params_dict
         
-        if self.verbose and not TQDM_AVAILABLE and self.current_fit % max(1, self.total_fits // 10) == 0:
-            elapsed = time.time() - self.start_time
-            rate = self.current_fit / elapsed if elapsed > 0 else 0
-            eta = (self.total_fits - self.current_fit) / rate if rate > 0 else 0
-            print(f"  Progress: {self.current_fit}/{self.total_fits} fit "
-                  f"({100*self.current_fit/self.total_fits:.0f}%) - "
-                  f"ETA: {eta:.0f}s", flush=True)
-    
-    def close(self):
-        """Chiude la barra di progresso."""
         if self.pbar:
             self.pbar.close()
+        
+        elapsed = time.time() - self.start_time
+        
+        if self.verbose:
+            print(f"\n  {'─' * 76}")
+            print(f"  📊 RIEPILOGO TUNING IPERPARAMETRI")
+            print(f"  {'─' * 76}")
+            print(f"  ⏱️  Tempo totale: {elapsed:.1f}s")
+            print(f"  🎯 Miglior score CV: {best_score:.4f}")
+            print(f"  🏆 Parametri migliori:")
+            
+            for k, v in best_params_dict.items():
+                k_clean = k.replace("clf__", "").replace("scaler__", "")
+                k_it = self.PARAM_NAMES_IT.get(k_clean, k_clean)
+                desc = self.PARAM_DESCRIPTIONS.get(k_clean, "")
+                
+                # Formatta il valore
+                if isinstance(v, float):
+                    v_str = f"{v:.4f}" if v < 1 else f"{v:.0f}"
+                else:
+                    v_str = str(v)
+                
+                if desc:
+                    print(f"    • {k_it} = {v_str}  ({desc})")
+                else:
+                    print(f"    • {k_it} = {v_str}")
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +328,10 @@ def esegui_grid_search(X_train, y_train, X_val, y_val, configs=None, verbose=Tru
 
         start = time.time()
 
-        # Crea la GridSearchCV con verbose=2 per stampare ogni fit
+        # Logger personalizzato per grid search
+        logger = GridSearchLogger(total_fits, n_combinazioni, verbose=verbose)
+
+        # Crea la GridSearchCV con verbose ridotto (non stampa ogni fit)
         grid = GridSearchCV(
             estimator=pipeline,
             param_grid=param_grid,
@@ -283,31 +339,22 @@ def esegui_grid_search(X_train, y_train, X_val, y_val, configs=None, verbose=Tru
             scoring=SCORING,
             n_jobs=N_JOBS,
             refit=True,
-            verbose=2 if verbose else 0,
+            verbose=0,  # Niente log grezzi - usiamo il nostro logger
             error_score="raise",
         )
 
-        # Callback per monitoraggio progresso
-        callback = ProgressCallback(total_fits, verbose=verbose) if verbose and TQDM_AVAILABLE else None
-
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            # Fit della GridSearch con stampa intermedia dei progressi
             grid.fit(X_train, y_train)
-            
-            # Stampa risultati intermedi durante il fitting
-            if verbose:
-                print(f"\n  ✓ Cross-validation completata")
-                print(f"    Miglior score CV: {grid.best_score_:.4f}")
-
-        if callback:
-            callback.close()
 
         tempo = time.time() - start
+        
+        # Finalizza il logger con i risultati
+        logger.finalize(grid.best_score_, grid.best_params_)
 
         # Predizione sul validation set
         if verbose:
-            print(f"  Predizione sul validation set...")
+            print(f"\n  🔍 Predizione sul validation set...")
         y_pred = grid.best_estimator_.predict(X_val)
         f1_val = f1_score(y_val, y_pred, average="micro")
         acc_val = accuracy_score(y_val, y_pred)
@@ -319,11 +366,16 @@ def esegui_grid_search(X_train, y_train, X_val, y_val, configs=None, verbose=Tru
         }
 
         if verbose:
-            print(f"\n  Completato in {tempo:.1f}s")
-            print(f"    Miglior score CV ({SCORING}): {grid.best_score_:.4f}")
-            print(f"    Score Validation  (F1-micro): {f1_val:.4f}")
-            print(f"    Accuracy Validation:          {acc_val:.4f}")
-            print(f"    Migliori iperparametri:       {best_params_clean}")
+            print(f"\n{'─' * 80}")
+            print(f"  ✅ RISULTATI FINALI")
+            print(f"{'─' * 80}")
+            print(f"  Tempo totale: {tempo:.1f}s")
+            print(f"  Miglior score CV ({SCORING}): {grid.best_score_:.4f}")
+            print(f"  Score Validation (F1-micro): {f1_val:.4f}")
+            print(f"  Accuracy Validation: {acc_val:.4f}")
+            print(f"\n  Parametri migliori:")
+            for param, value in best_params_clean.items():
+                print(f"    • {param}: {value}")
 
         risultati.append({
             "Algoritmo": name,
