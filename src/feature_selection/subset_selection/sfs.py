@@ -204,24 +204,13 @@ class SequentialForwardSelector:
         self,
         x: pd.DataFrame,
         y: np.ndarray,
-        max_features: int = 15,
+        max_features: Optional[int] = None,
         test_size: float = 0.2,
         cv_folds: int = 5,
         max_rows: Optional[int] = 30000,
         min_improvement: float = 0.0,
         max_steps: Optional[int] = None,
     ) -> dict[str, object]:
-        if max_features <= 0:
-            raise ValueError("max_features deve essere > 0")
-        if not (0 < test_size < 1):
-            raise ValueError("test_size deve stare in (0,1)")
-        if cv_folds <= 0:
-            raise ValueError("cv_folds deve essere >= 1")
-        if max_rows is not None and max_rows <= 200:
-            raise ValueError("max_rows deve essere > 200 oppure None")
-        if max_steps is not None and max_steps <= 0:
-            raise ValueError("max_steps deve essere > 0 oppure None")
-
         x_work = x.copy()
         y_work = y.copy()
 
@@ -241,6 +230,21 @@ class SequentialForwardSelector:
         feature_names = x_work.columns.to_numpy()
         x_array = x_work.to_numpy(dtype=float)
         total_features = x_array.shape[1]
+        
+        # Se max_features è None, usare il numero totale di feature
+        if max_features is None:
+            max_features = total_features
+        
+        if max_features <= 0:
+            raise ValueError("max_features deve essere > 0")
+        if not (0 < test_size < 1):
+            raise ValueError("test_size deve stare in (0,1)")
+        if cv_folds <= 0:
+            raise ValueError("cv_folds deve essere >= 1")
+        if max_rows is not None and max_rows <= 200:
+            raise ValueError("max_rows deve essere > 200 oppure None")
+        if max_steps is not None and max_steps <= 0:
+            raise ValueError("max_steps deve essere > 0 oppure None")
         if max_features > total_features:
             raise ValueError("max_features deve essere <= del numero di feature disponibili.")
 

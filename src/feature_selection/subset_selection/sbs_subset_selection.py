@@ -343,8 +343,9 @@ class SequentialBackwardSelector:
                 stop_reason = "peggioramento_prestazioni"
                 break
 
-            # Soglia opzionale: richiede miglioramento minimo > 0.
-            if best_score < (current_score + min_improvement):
+            # Soglia opzionale: richiede miglioramento minimo (relativo).
+            # min_improvement = 0.001 significa: tollerare degradazione fino al 0.1% del baseline
+            if best_score < (current_score * (1 - min_improvement)):
                 stop_reason = "miglioramento_insufficiente"
                 break
 

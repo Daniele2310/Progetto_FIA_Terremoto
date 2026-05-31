@@ -26,8 +26,10 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import accuracy_score, classification_report, f1_score
 from sklearn.model_selection import GridSearchCV, StratifiedKFold, train_test_split
+from sklearn.model_selection import ParameterGrid, cross_val_score
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
+from sklearn.base import clone
 from sklearn.preprocessing import StandardScaler
 
 try:
@@ -74,6 +76,8 @@ class ProgressSpinner:
         self.thread = None
         self.start_time = time.time()
         self.spinner_idx = 0
+        self.completed = 0
+        self._lock = threading.Lock()
     
     def start(self):
         """Avvia lo spinner in un thread separato."""
@@ -92,10 +96,15 @@ class ProgressSpinner:
             self.thread.join(timeout=2.0)
         # Pulisci la riga dello spinner
         try:
-            sys.stdout.write("\r" + " " * 80 + "\r")
+            sys.stdout.write("\r" + " " * 120 + "\r")
             sys.stdout.flush()
         except:
             pass
+
+    def tick(self, n: int = 1):
+        """Incrementa il contatore dei fit completati (thread-safe)."""
+        with self._lock:
+            self.completed += int(n)
     
     def _spin(self):
         """Loop dello spinner che gira mentre il fitting è in corso."""
@@ -103,7 +112,10 @@ class ProgressSpinner:
             try:
                 elapsed = time.time() - self.start_time
                 spinner_char = self.SPINNERS[self.spinner_idx % len(self.SPINNERS)]
-                msg = f"  {spinner_char} Tuning in corso... ({elapsed:.0f}s)"
+                # Mostra completamento candidato/fit quando disponibile
+                with self._lock:
+                    comp = self.completed
+                msg = f"  {spinner_char} Tuning in corso... ({elapsed:.0f}s)  [{comp}/{self.total_fits}]"
                 sys.stdout.write("\r" + msg)
                 sys.stdout.flush()
                 self.spinner_idx += 1
@@ -309,6 +321,103 @@ def get_all_configs():
 
 
 # ---------------------------------------------------------------------------
+# Wrapper per contare i fit eseguiti durante GridSearchCV
+# Nota: usiamo handle globali per la progressione per evitare che oggetti
+# non serializzabili (tqdm, TextIOWrapper, thread locks) vengano copiati
+# durante il clone/pickle degli stimatori di sklearn.
+# ---------------------------------------------------------------------------
+
+# Handle globali (impostati prima di grid.fit e ripristinati dopo)
+GLOBAL_PBAR = None
+GLOBAL_SPINNER = None
+
+
+from sklearn.base import BaseEstimator, ClassifierMixin
+
+
+class FitCounterWrapper(BaseEstimator, ClassifierMixin):
+    """Wrapper attorno all'estimatore che segnala il completamento di ogni fit.
+
+    Conserva solo l'estimatore interno come attributo serializzabile; gli
+    aggiornamenti alla UI di progresso (tqdm/spinner) vengono fatti tramite
+    variabili globali esterne `GLOBAL_PBAR` / `GLOBAL_SPINNER`.
+    """
+
+    def __init__(self, estimator):
+        # Mantieni solo l'estimatore: evita attributi non serializzabili.
+        self.estimator = estimator
+        self._lock = threading.Lock()
+
+    def fit(self, X, y, **fit_kwargs):
+        # Delegare il fit al vero estimatore
+        _ = self.estimator.fit(X, y, **fit_kwargs)
+
+        # Aggiorna contatori/indicatori di progresso usando handle globali
+        try:
+            if GLOBAL_PBAR is not None:
+                try:
+                    GLOBAL_PBAR.update(1)
+                except Exception:
+                    pass
+            elif GLOBAL_SPINNER is not None:
+                try:
+                    GLOBAL_SPINNER.tick(1)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        return self
+
+    def predict(self, X):
+        return self.estimator.predict(X)
+
+    def predict_proba(self, X):
+        return self.estimator.predict_proba(X)
+
+    def score(self, X, y):
+        return self.estimator.score(X, y)
+
+    def get_params(self, deep=True):
+        # Espone solo i parametri del wrapper stesso per rendere il clone sicuro.
+        return {"estimator": self.estimator}
+
+    def set_params(self, **params):
+        # Inoltra i parametri all'estimatore interno, se possibile.
+        forwarded = {}
+        local = {}
+        for k, v in params.items():
+            if k in {"estimator"}:
+                local[k] = v
+            else:
+                forwarded[k] = v
+
+        if forwarded and self.estimator is not None:
+            try:
+                self.estimator.set_params(**forwarded)
+            except Exception:
+                # Ignore errors forwarding params
+                pass
+
+        for k, v in local.items():
+            setattr(self, k, v)
+
+        return self
+
+
+def _wrap_pipeline_for_progress(pipeline: Pipeline) -> Pipeline:
+    """Restituisce una copia della pipeline dove lo step 'clf' è avvolto dal wrapper."""
+    # Clona i passaggi ma sostituisce l'ultimo estimatore o lo step 'clf'
+    new_steps = []
+    for name, step in pipeline.steps:
+        if name == "clf":
+            new_steps.append((name, FitCounterWrapper(step)))
+        else:
+            new_steps.append((name, step))
+    return Pipeline(new_steps)
+
+
+# ---------------------------------------------------------------------------
 # Funzioni principali
 # ---------------------------------------------------------------------------
 
@@ -394,28 +503,106 @@ def esegui_grid_search(X_train, y_train, X_val, y_val, configs=None, verbose=Tru
             print(f"  Inizio tuning... (visualizza progressi candidato per candidato)\n")
             sys.stdout.flush()
 
-        # Crea lo spinner per mostrare il progresso
-        spinner = ProgressSpinner(total_fits, verbose=verbose)
-        spinner.start()
+        # Valutazione preliminare: scorri i candidati per mostrare progressi per-candidato.
+        # Per dataset grandi, usiamo un sotto-campione per velocizzare la preview.
+        preview_X = X_train
+        preview_y = y_train
+        max_preview_rows = 5000
+        if len(preview_X) > max_preview_rows:
+            preview_X = preview_X.sample(n=max_preview_rows, random_state=RANDOM_STATE)
+            preview_y = preview_y.loc[preview_X.index]
 
-        # Crea la GridSearchCV con verbose=0 (lo spinner mostrerà il progresso)
+        pg = list(ParameterGrid(param_grid))
+        preview_total = len(pg)
+        if verbose:
+            print(f"  Valutazione preliminare di {preview_total} candidati (preview veloce)...")
+            sys.stdout.flush()
+
+        cv_strategy_preview = StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=RANDOM_STATE)
+        # Stampa compatta e leggibile per ogni candidato (usa tqdm se disponibile)
+        if verbose and TQDM_AVAILABLE:
+            iterator = tqdm(pg, desc="  Preview candidati", unit="candidato", leave=True)
+        else:
+            iterator = pg
+
+        preview_results = []
+
+        for i, candidate in enumerate(iterator, start=1):
+            # cross_val_score si aspetta che i param_grid siano i nomi dei parametri
+            # della pipeline (es. 'clf__n_estimators'). Cloniamo la pipeline e
+            # impostiamo i parametri per il candidato.
+            est = clone(pipeline)
+            try:
+                est.set_params(**candidate)
+            except Exception:
+                pass
+
+            try:
+                scores = cross_val_score(est, preview_X, preview_y, cv=cv_strategy_preview, scoring=SCORING, n_jobs=1)
+                mean_score = float(np.mean(scores))
+            except Exception:
+                mean_score = float('nan')
+
+            # Formatta in modo compatto: indice, percentuale, score, parametri sintetici
+            if verbose:
+                total = preview_total
+                pct = (i / total) * 100
+                params_short = logger._format_params_italian(candidate)
+                line = f"  [{i}/{total}] {pct:3.0f}% | score={mean_score:.4f} | {params_short}"
+                if TQDM_AVAILABLE:
+                    try:
+                        iterator.set_postfix({'score': f"{mean_score:.4f}"})
+                    except Exception:
+                        print(line)
+                else:
+                    print(line)
+                sys.stdout.flush()
+
+            # Salva il risultato per la mini-classifica
+            preview_results.append({
+                'index': i,
+                'score': mean_score,
+                'params': candidate,
+            })
+
+        # Se abbiamo usato tqdm, chiudilo esplicitamente per pulire l'output
+        try:
+            if TQDM_AVAILABLE and verbose and hasattr(iterator, 'close'):
+                iterator.close()
+        except Exception:
+            pass
+
+        # Dopo la preview, mostra una mini-classifica dei top-5 candidati
+        if verbose and preview_results:
+            topk = sorted(preview_results, key=lambda r: (float('-inf') if np.isnan(r['score']) else r['score']), reverse=True)[:5]
+            print(f"\n  Top-{len(topk)} candidati (preview):")
+            for rank, item in enumerate(topk, start=1):
+                params_fmt = logger._format_params_italian(item['params'])
+                score = item['score']
+                score_str = f"{score:.4f}" if not np.isnan(score) else "nan"
+                print(f"    {rank}) score={score_str} | {params_fmt}")
+            sys.stdout.flush()
+
+        # Clona la pipeline per il GridSearchCV (senza wrapper)
+        pipeline_clone = clone(pipeline)
+
+        # GridSearchCV con verbose>0: mostra progresso reale candidato-per-candidato
         grid = GridSearchCV(
-            estimator=pipeline,
+            estimator=pipeline_clone,
             param_grid=param_grid,
             cv=StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=RANDOM_STATE),
             scoring=SCORING,
             n_jobs=N_JOBS,
             refit=True,
-            verbose=0,  # Niente messaggi [CV] - usa solo lo spinner
+            verbose=2,
             error_score="raise",
         )
-
+        if verbose:
+            print("\n  Fit finale GridSearchCV in corso...\n")
+            sys.stdout.flush()
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             grid.fit(X_train, y_train)
-        
-        # Ferma lo spinner
-        spinner.stop()
         
         if verbose:
             print("\n  ✓ Tuning completato")

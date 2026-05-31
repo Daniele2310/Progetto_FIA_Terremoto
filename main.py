@@ -9,7 +9,6 @@ MENU PRINCIPALE:
   FASE 4  - Scelta modello        : KNN / Albero Decisionale / Random Forest
                                     [DA IMPLEMENTARE] Multi-Esperto (AdaBoost / SVM)
   FASE 5  - Presentazione risultati (F1-Micro)
-             [DA IMPLEMENTARE] Confronto migliore FS per modello
 """
 
 import io
@@ -148,27 +147,23 @@ def menu_feature_selection() -> str:
     
     Ritorna:
         'none' -> nessuna feature selection
-        'relief' -> Relief ranking
-        'info_gain' -> Information gain ranking
         'auto' -> Valutazione dinamica (chiede il modello e valuta il migliore)
     """
     _banner("FEATURE SELECTION — Scelta Metodo")
     print("  Opzioni disponibili:")
     print("  1) Nessuna          — usa tutte le feature")
-    print("  2) Relief Ranking   — feature importance basata su vicinanza")
-    print("  3) Inf. Gain Rank   — feature importance basata su entropia")
-    print("  4) Automatica       — valuta TUTTI i metodi per il modello scelto")
+    print("  2) Automatica       — valuta TUTTI i metodi per il modello scelto")
     print()
     try:
-        scelta = input("Seleziona metodo [1-4] (default=1): ").strip()
+        scelta = input("Seleziona metodo [1-2] (default=1): ").strip()
     except EOFError:
         scelta = ""
-    if scelta not in {"1", "2", "3", "4"}:
+    if scelta not in {"1", "2"}:
         scelta = "1"
-    
-    mapping = {"1": "none", "2": "relief", "3": "info_gain", "4": "auto"}
+
+    mapping = {"1": "none", "2": "auto"}
     metodo = mapping[scelta]
-    nomi = {"none": "Nessuna", "relief": "Relief Ranking", "info_gain": "Information Gain", "auto": "Automatica (TUTTI i metodi)"}
+    nomi = {"none": "Nessuna", "auto": "Automatica (TUTTI i metodi)"}
     print(f"\n>> Metodo FS selezionato: {nomi[metodo]}")
     return metodo
 
@@ -188,7 +183,6 @@ def menu_qualita_fs_automatica() -> str:
     print("  2) Balanced    — medio (~60 min)       | sample=10k, fold=3, TUTTI i metodi")
     print("  3) Thorough    — massima qualità (~120 min) | sample=15k, fold=5, TUTTI i metodi")
     print()
-    print("  👉 Per F1-Micro massimo → scegli 'Thorough'")
     print()
     try:
         scelta = input("Seleziona modalità [1-3] (default=2): ").strip()
@@ -372,7 +366,7 @@ def valuta_fs_dinamica_per_modello(
         skip_subset_methods = False
     elif modalita == "thorough":
         sample_size = sample_size or 15000
-        max_features = max_features or 40
+        max_features = max_features or 100
         max_rows_subset = max_rows_subset or 3000
         subset_cv_folds = subset_cv_folds or 5
         skip_subset_methods = False
@@ -594,11 +588,11 @@ def valuta_fs_dinamica_per_modello(
             # Addestra modello scelto con verbosità ridotta
             print(f"    Addestramento modello...")
             if scelta_modello == "1":
-                modello_info = train_knn(X_train_fs, y_train_fs, X_val_fs, y_val_fs, verbose=False)
+                modello_info = train_knn(X_train_fs, y_train_fs, X_val_fs, y_val_fs, verbose=True)
             elif scelta_modello == "2":
-                modello_info = train_decisiontree(X_train_fs, y_train_fs, X_val_fs, y_val_fs, verbose=False)
+                modello_info = train_decisiontree(X_train_fs, y_train_fs, X_val_fs, y_val_fs, verbose=True)
             elif scelta_modello == "3":
-                modello_info = train_randomforest(X_train_fs, y_train_fs, X_val_fs, y_val_fs, verbose=False)
+                modello_info = train_randomforest(X_train_fs, y_train_fs, X_val_fs, y_val_fs, verbose=True)
             else:
                 print(f"    ⚠️  Modello {scelta_modello} non supportato")
                 continue
@@ -890,7 +884,7 @@ def train_multi_expert_system(
     print("  Addestramento esperti singoli...")
     
     try:
-        rf_result = train_randomforest(X_train, y_train, X_val, y_val, verbose=False)
+        rf_result = train_randomforest(X_train, y_train, X_val, y_val, verbose=True)
         rf_f1 = rf_result.get('metrics', {}).get('f1_micro', 0)
         print(f"    ✓ Random Forest addestrato (F1: {rf_f1:.4f})")
     except Exception as e:
@@ -1114,11 +1108,33 @@ def presenta_risultati(
 
     _banner("FASE 5 — RISULTATI FINALI")
 
+    def _format_imputation_strategy(s):
+        # Accetta oggetto Strategy, codice o nome_report e ritorna etichetta umana
+        try:
+            from src.preprocessing.imputation_strategies import STRATEGIE_IMPUTAZIONE
+        except Exception:
+            STRATEGIE_IMPUTAZIONE = {}
+
+        if s is None:
+            return "Sconosciuta"
+        # se è un oggetto strategy con nome_menu
+        if hasattr(s, 'nome_menu'):
+            return getattr(s, 'nome_menu')
+        # se è un codice del registry (es. '1','2') trova l'oggetto
+        if isinstance(s, str) and s in STRATEGIE_IMPUTAZIONE:
+            return STRATEGIE_IMPUTAZIONE[s].nome_menu
+        # se è il nome_report (es. 'univariata_media'), cerca nell'oggetto
+        if isinstance(s, str):
+            for strat in STRATEGIE_IMPUTAZIONE.values():
+                if getattr(strat, 'nome_report', None) == s:
+                    return getattr(strat, 'nome_menu')
+        return str(s)
+
     # === Riepilogo scelte ===
     print("\n📋 RIEPILOGO SCELTE EFFETTUATE:\n")
     
     print(f"  🔹 Outlier Detection:      {'IQR' if scelta_outlier == '1' else 'DBSCAN'}")
-    print(f"  🔹 Imputazione:            {strategia_imputazione}")
+    print(f"  🔹 Imputazione:            {_format_imputation_strategy(strategia_imputazione)}")
     print(f"  🔹 Geo Embedding:          {'Embedding statico' if tipo_geo_embedding == 'embedding' else 'Rete neurale'}")
     print(f"  🔹 Feature Selection:      {metodo_fs.replace('_', ' ').upper()}")
     print(f"  🔹 Modello:                {risultati_modello.get('nome_modello', '?')}")
@@ -1130,8 +1146,20 @@ def presenta_risultati(
     best_params = risultati_modello.get("best_params", {})
     if best_params:
         print("  Miglior configurazione iperparametri:")
+        # Mappa nomi parametri in etichette umane quando possibile
+        param_display_map = {
+            'metric': 'Distanza',
+            'n_neighbors': 'Numero vicini',
+            'weights': 'Pesi',
+            'max_depth': 'Profondità Max',
+            'n_estimators': 'N. Alberi',
+            'min_samples_leaf': 'Camp. Min Foglia',
+            'min_samples_split': 'Camp. Min Split',
+            'max_features': 'Feature Per Split',
+        }
         for param, value in list(best_params.items())[:5]:
-            print(f"    - {param}: {value}")
+            display = param_display_map.get(param, param.replace('_', ' ').capitalize())
+            print(f"    - {display}: {value}")
         if len(best_params) > 5:
             print(f"    ... e {len(best_params) - 5} altri parametri")
     
@@ -1171,6 +1199,9 @@ def main():
     print("    3) Geo Embedding      (rete neurale)")
     print("    4) Scelta Modello     (KNN / DT / RF / Multi-Esperto)")
     print("    5) Risultati          (F1-Micro)")
+
+    # Track whether pipeline reached completion (Fase 5)
+    pipeline_completed = False
 
     # ── FASE 1: Outlier Detection ──────────────────────────
     scelta_outlier = menu_outlier_detection()
@@ -1322,6 +1353,28 @@ def main():
             f"  Missing {col} test:  "
             f"{col_report['n_missing_test_prima']} → {col_report['n_missing_test_dopo']}"
         )
+        # Se la strategia è univariata (media/mediana), mostriamo il valore calcolato sul train
+        if col_report.get('strategia') in ('univariata_media', 'univariata_mediana'):
+            valore = col_report.get('valore_imputazione_train')
+            if valore is not None:
+                print(f"  Valore usato per imputazione (train): {valore:.2f}")
+        # Se la strategia è multivariata (regressione o knn), mostriamo statistiche dei valori imputati
+        if col_report.get('strategia') in ('multivariata_regressione_lineare', 'knn_predictor'):
+            # statistiche_imputazione possono contenere media/mediana/min/max per train/test
+            media_train = col_report.get('train_media_imputata')
+            mediana_train = col_report.get('train_mediana_imputata')
+            min_train = col_report.get('train_min_imputato')
+            max_train = col_report.get('train_max_imputato')
+
+            media_test = col_report.get('test_media_imputata')
+            mediana_test = col_report.get('test_mediana_imputata')
+            min_test = col_report.get('test_min_imputato')
+            max_test = col_report.get('test_max_imputato')
+
+            if media_train is not None:
+                print(f"  Valori imputati TRAIN — media: {media_train:.2f}, mediana: {mediana_train:.2f}, min: {min_train:.2f}, max: {max_train:.2f}")
+            if media_test is not None:
+                print(f"  Valori imputati TEST  — media: {media_test:.2f}, mediana: {mediana_test:.2f}, min: {min_test:.2f}, max: {max_test:.2f}")
 
     # ── NUOVA FEATURE: monum_flag (age_flag) ───────────────
     # La flag viene calcolata sull'età ORIGINALE dell'edificio (pre-outlier),
@@ -1418,6 +1471,8 @@ def main():
 
     # ── FASE 3.5: Feature Selection ────────────────────────
     metodo_fs = menu_feature_selection()
+    # Modalità di valutazione usata per la FS automatica (fast/balanced/thorough)
+    modalita_fs = None
     
     _banner("FASE 3.5 — FEATURE SELECTION")
     
@@ -1482,13 +1537,117 @@ def main():
         metodo_fs=metodo_fs,
         risultati_modello=risultati_modello,
     )
+    # Segna che abbiamo raggiunto la Fase 5 (pipeline completata)
+    pipeline_completed = True
+
+    # Salva le performance finali SOLO se la pipeline è arrivata alla Fase 5.
+    if pipeline_completed:
+        temp_json = None
+        try:
+            import os
+            import json
+            import csv
+            from datetime import datetime
+
+            out_dir = os.path.join("outputs", "performances")
+            os.makedirs(out_dir, exist_ok=True)
+            out_file = os.path.join(out_dir, "performances.csv")
+            temp_json = os.path.join(out_dir, "record_tmp.json")
+
+            # Costruisci il record
+            record = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "scelta_modello": scelta_modello,
+                "nome_modello": risultati_modello.get("nome_modello") if risultati_modello else None,
+                "scelta_outlier": ("IQR" if scelta_outlier == "1" else "DBSCAN"),
+                "strategia_imputazione": None,
+                "tipo_geo_embedding": tipo_geo_embedding,
+                "metodo_fs": metodo_fs,
+                "modalita_fs": modalita_fs,
+                "n_features": risultati_modello.get("n_features") if risultati_modello else None,
+                "f1_micro_val": risultati_modello.get("f1_micro") if risultati_modello else None,
+                "accuracy_val": risultati_modello.get("accuracy") if risultati_modello else None,
+                "best_params": json.dumps(risultati_modello.get("best_params", {}), default=str),
+                "selected_features_count": len(risultati_modello.get("selected_features", [])) if risultati_modello else None,
+                "selected_features_preview": ",".join((risultati_modello.get("selected_features", []) or [])[:10]),
+            }
+
+            # Prova a ricavare una etichetta leggibile per la strategia di imputazione
+            try:
+                from src.preprocessing.imputation_strategies import STRATEGIE_IMPUTAZIONE
+            except Exception:
+                STRATEGIE_IMPUTAZIONE = {}
+
+            strategia_usata = None
+            if imputation_reports:
+                strategia_usata = next(iter(imputation_reports.values()))["strategia"]
+
+            strategia_readable = strategia_usata
+            if isinstance(strategia_usata, str):
+                if strategia_usata in STRATEGIE_IMPUTAZIONE:
+                    strategia_readable = STRATEGIE_IMPUTAZIONE[strategia_usata].nome_menu
+                else:
+                    for strat in STRATEGIE_IMPUTAZIONE.values():
+                        if getattr(strat, "nome_report", None) == strategia_usata:
+                            strategia_readable = getattr(strat, "nome_menu")
+                            break
+
+            record["strategia_imputazione"] = strategia_readable
+
+            # Scrivi record temporaneo (atomicità: se l'utente interrompe, non eseguiamo l'append finale)
+            with open(temp_json, "w", encoding="utf-8") as tf:
+                json.dump(record, tf, ensure_ascii=False)
+
+            # Append al CSV (operazione finale)
+            fieldnames = list(record.keys())
+            write_header = not os.path.exists(out_file)
+            with open(out_file, "a", newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                if write_header:
+                    writer.writeheader()
+                writer.writerow(record)
+
+            # Rimuovi temporaneo
+            try:
+                os.remove(temp_json)
+            except Exception:
+                pass
+
+            print(f"  ✓ Performance salvate in: {out_file}")
+
+        except KeyboardInterrupt:
+            # Utente ha premuto Ctrl+C: assicurati di non lasciare artefatti
+            try:
+                if temp_json and os.path.exists(temp_json):
+                    os.remove(temp_json)
+            except Exception:
+                pass
+            print("  ⚠️ Salvataggio annullato: interruzione utente (Ctrl+C)")
+        except Exception as e:
+            print(f"  ⚠️ Impossibile salvare le performance: {e}")
 
     # ── RIEPILOGO FINALE ───────────────────────────────────
     _banner("PIPELINE COMPLETATA")
     print(f"  ✅ Outlier detection:       {'IQR' if scelta_outlier == '1' else 'DBSCAN'}")
     if imputation_reports:
         strategia_usata = next(iter(imputation_reports.values()))["strategia"]
-        print(f"  ✅ Strategia imputazione:   {strategia_usata}")
+        # Proviamo a ottenere una etichetta leggibile dalla registry delle strategie
+        try:
+            from src.preprocessing.imputation_strategies import STRATEGIE_IMPUTAZIONE
+        except Exception:
+            STRATEGIE_IMPUTAZIONE = {}
+
+        strategia_readable = strategia_usata
+        if isinstance(strategia_usata, str):
+            if strategia_usata in STRATEGIE_IMPUTAZIONE:
+                strategia_readable = STRATEGIE_IMPUTAZIONE[strategia_usata].nome_menu
+            else:
+                for strat in STRATEGIE_IMPUTAZIONE.values():
+                    if getattr(strat, 'nome_report', None) == strategia_usata:
+                        strategia_readable = getattr(strat, 'nome_menu')
+                        break
+
+        print(f"  ✅ Strategia imputazione:   {strategia_readable}")
         print(f"     Colonne imputate:       {list(imputation_reports.keys())}")
     else:
         print("  ✅ Nessuna colonna numerica da imputare")
