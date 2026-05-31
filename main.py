@@ -1190,9 +1190,6 @@ def main():
     # Salvo l'upper bound di 'age' calcolato sul train (serve per monum_flag)
     age_upper_bound_train = train_quality_report["outliers"].loc["age", "upper_bound"]
 
-    _banner("REPORT OUTLIER — TRAINING SET")
-    print(train_quality_report["outliers"])
-
     # ── DATA QUALITY TEST ──────────────────────────────────
     test_quality_handler = DataQualityHandler(test_values)
     test_quality_handler.pulisci_nomi_colonne()
@@ -1218,6 +1215,9 @@ def main():
 
     if scelta_outlier == "1":
         # --- IQR ---
+        _banner("REPORT OUTLIER — TRAINING SET")
+        print(train_quality_report["outliers"])
+        
         _banner("OUTLIER DETECTION — IQR (solo training set)")
         outliers_df = train_quality_report.get("outliers")
         if outliers_df is not None:

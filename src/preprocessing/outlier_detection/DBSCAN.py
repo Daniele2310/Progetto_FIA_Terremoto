@@ -98,13 +98,13 @@ def calcola_range_eps(X, min_samples_values):
             - eps_max: estremo superiore del range di eps
             - k_distances_dict: dizionario {min_samples: k_distances_ordinate}
     """
-    print("\nCalcolo range di eps tramite analisi K-distance...")
+    print("\nStima del range di eps tramite K-distance analysis:")
+    print("-" * 70)
     
     all_eps_candidates = []
     k_distances_dict = {}
     
     for k in min_samples_values:
-        print(f"  -> K-distance per k={k}...", end=" ")
         neigh = NearestNeighbors(n_neighbors=k, n_jobs=-1)
         neigh.fit(X)
         distances, _ = neigh.kneighbors(X)
@@ -116,12 +116,13 @@ def calcola_range_eps(X, min_samples_values):
         for pct in [90, 92, 94, 95, 96, 97, 98, 99]:
             all_eps_candidates.append(np.percentile(k_dist, pct))
         
-        print(f"range distanze: [{k_dist[0]:.3f}, {k_dist[-1]:.3f}]")
+        print(f"  k={k:2d}  min_distanza={k_dist[0]:8.3f}  max_distanza={k_dist[-1]:8.3f}")
     
     eps_min = max(np.min(all_eps_candidates), 0.01)  # almeno 0.01
     eps_max = np.max(all_eps_candidates)
     
-    print(f"\nRange eps stimato: [{eps_min:.3f}, {eps_max:.3f}]")
+    print("-" * 70)
+    print(f"Range eps stimato: [{eps_min:.4f}, {eps_max:.4f}]")
     
     return eps_min, eps_max, k_distances_dict
 
@@ -179,8 +180,9 @@ def esegui_grid_search_dbscan(X, eps_values, min_samples_values, verbose=True):
             - miglior_combinazione: dict con i parametri e metriche della combinazione migliore
     """
     n_combinazioni = len(eps_values) * len(min_samples_values)
-    print(f"\nGrid Search DBSCAN: {len(eps_values)} eps x {len(min_samples_values)} min_samples "
-          f"= {n_combinazioni} combinazioni da valutare")
+    print(f"\nGrid Search DBSCAN")
+    print("-" * 80)
+    print(f"  Combinazioni da valutare: {len(eps_values)} eps x {len(min_samples_values)} min_samples = {n_combinazioni}")
     print("-" * 80)
     
     risultati = []
@@ -207,7 +209,7 @@ def esegui_grid_search_dbscan(X, eps_values, min_samples_values, verbose=True):
             if n_clusters == 0:
                 if verbose:
                     print(f"  [{idx:3d}/{n_combinazioni}] eps={eps:.4f}, min_samples={min_samples:3d} "
-                          f"-> SCARTATO (0 cluster, tutti outlier)")
+                          f"- SCARTATO (0 cluster, tutti outlier)")
                 risultati.append({
                     "eps": eps, "min_samples": min_samples,
                     "n_clusters": 0, "n_outliers": n_outliers,
@@ -220,7 +222,7 @@ def esegui_grid_search_dbscan(X, eps_values, min_samples_values, verbose=True):
             if n_clusters == 1:
                 if verbose:
                     print(f"  [{idx:3d}/{n_combinazioni}] eps={eps:.4f}, min_samples={min_samples:3d} "
-                          f"-> SCARTATO (1 solo cluster, outlier={pct_outliers:.1f}%)")
+                          f"- SCARTATO (1 solo cluster, outlier={pct_outliers:.1f}%)")
                 risultati.append({
                     "eps": eps, "min_samples": min_samples,
                     "n_clusters": 1, "n_outliers": n_outliers,
@@ -234,7 +236,7 @@ def esegui_grid_search_dbscan(X, eps_values, min_samples_values, verbose=True):
                 motivo = f"outlier {pct_outliers:.1f}% fuori range [{OUTLIER_PCT_MIN}, {OUTLIER_PCT_MAX}]%"
                 if verbose:
                     print(f"  [{idx:3d}/{n_combinazioni}] eps={eps:.4f}, min_samples={min_samples:3d} "
-                          f"-> SCARTATO ({motivo})")
+                          f"- SCARTATO ({motivo})")
                 risultati.append({
                     "eps": eps, "min_samples": min_samples,
                     "n_clusters": n_clusters, "n_outliers": n_outliers,
@@ -268,10 +270,10 @@ def esegui_grid_search_dbscan(X, eps_values, min_samples_values, verbose=True):
             })
             
             if verbose:
-                marker = " [*]" if sil_score > miglior_score else ""
+                status = "MIGLIORE" if sil_score > miglior_score else "OK"
                 print(f"  [{idx:3d}/{n_combinazioni}] eps={eps:.4f}, min_samples={min_samples:3d} "
-                      f"-> cluster={n_clusters}, outlier={pct_outliers:.1f}%, "
-                      f"silhouette={sil_score:.4f}, tempo={tempo:.1f}s{marker}")
+                      f"| cluster={n_clusters}, outlier={pct_outliers:.1f}%, "
+                      f"silhouette={sil_score:.4f}, tempo={tempo:.1f}s  ({status})")
             
             # Aggiorna il migliore
             if sil_score > miglior_score:
@@ -427,28 +429,30 @@ def rileva_outlier_dbscan(train_values, colonne_continue=COLONNE_CONTINUE):
     print(f"   Tempo totale Grid Search:    {tempo_gs:.1f}s")
 
     if miglior_comb is None:
-        print("\n[!] Nessuna combinazione valida trovata!")
-        print("   Suggerimenti:")
-        print("   - Ampliare il range di OUTLIER_PCT_MIN / OUTLIER_PCT_MAX")
-        print("   - Modificare MIN_SAMPLES_GRID o N_EPS_VALUES")
-        print("   - Verificare i dati in input")
+        print("\nAVVERTENZA: Nessuna combinazione valida trovata!")
+        print("\nSuggerimenti:")
+        print("  - Ampliare il range di OUTLIER_PCT_MIN / OUTLIER_PCT_MAX")
+        print("  - Modificare MIN_SAMPLES_GRID o N_EPS_VALUES")
+        print("  - Verificare i dati in input")
         return pd.Series(False, index=train_values.index), {
             "metodo": "dbscan",
             "n_outliers": 0,
             "nota": "nessuna combinazione valida trovata",
         }
 
-    print(f"\n   [*] MIGLIORE COMBINAZIONE:")
-    print(f"      eps          = {miglior_comb['eps']:.4f}")
-    print(f"      min_samples  = {miglior_comb['min_samples']}")
-    print(f"      Silhouette   = {miglior_comb['silhouette']:.4f}")
-    print(f"      N. cluster   = {miglior_comb['n_clusters']}")
-    print(f"      Outlier      = {miglior_comb['n_outliers']} ({miglior_comb['pct_outliers']:.1f}%)")
+    print(f"\nMIGLIORE COMBINAZIONE TROVATA:")
+    print("-" * 70)
+    print(f"  eps          = {miglior_comb['eps']:.4f}")
+    print(f"  min_samples  = {miglior_comb['min_samples']}")
+    print(f"  Silhouette   = {miglior_comb['silhouette']:.4f}")
+    print(f"  N. cluster   = {miglior_comb['n_clusters']}")
+    print(f"  Outlier      = {miglior_comb['n_outliers']} ({miglior_comb['pct_outliers']:.1f}%)")
+    print("-" * 70)
 
     validi = risultati_df[risultati_df["valido"] == True].sort_values(
         "silhouette", ascending=False
     ).head(5)
-    print(f"\n   Top 5 combinazioni:")
+    print(f"\nTop 5 combinazioni migliori:")
     print(validi[["eps", "min_samples", "n_clusters", "pct_outliers", "silhouette"]].to_string(index=False))
 
     print(f"\nApplicazione DBSCAN con i parametri ottimali...")
@@ -560,25 +564,27 @@ def main():
     print(f"   Tempo totale Grid Search:    {tempo_gs:.1f}s")
     
     if miglior_comb is None:
-        print("\n[!] Nessuna combinazione valida trovata!")
-        print("   Suggerimenti:")
-        print("   - Ampliare il range di OUTLIER_PCT_MIN / OUTLIER_PCT_MAX")
-        print("   - Modificare MIN_SAMPLES_GRID o N_EPS_VALUES")
-        print("   - Verificare i dati in input")
+        print("\nAVVERTENZA: Nessuna combinazione valida trovata!")
+        print("\nSuggerimenti:")
+        print("  - Ampliare il range di OUTLIER_PCT_MIN / OUTLIER_PCT_MAX")
+        print("  - Modificare MIN_SAMPLES_GRID o N_EPS_VALUES")
+        print("  - Verificare i dati in input")
         return
     
-    print(f"\n   [*] MIGLIORE COMBINAZIONE:")
-    print(f"      eps          = {miglior_comb['eps']:.4f}")
-    print(f"      min_samples  = {miglior_comb['min_samples']}")
-    print(f"      Silhouette   = {miglior_comb['silhouette']:.4f}")
-    print(f"      N. cluster   = {miglior_comb['n_clusters']}")
-    print(f"      Outlier      = {miglior_comb['n_outliers']} ({miglior_comb['pct_outliers']:.1f}%)")
+    print(f"\nMIGLIORE COMBINAZIONE TROVATA:")
+    print("-" * 70)
+    print(f"  eps          = {miglior_comb['eps']:.4f}")
+    print(f"  min_samples  = {miglior_comb['min_samples']}")
+    print(f"  Silhouette   = {miglior_comb['silhouette']:.4f}")
+    print(f"  N. cluster   = {miglior_comb['n_clusters']}")
+    print(f"  Outlier      = {miglior_comb['n_outliers']} ({miglior_comb['pct_outliers']:.1f}%)")
+    print("-" * 70)
     
     # Top 5 combinazioni
     validi = risultati_df[risultati_df["valido"] == True].sort_values(
         "silhouette", ascending=False
     ).head(5)
-    print(f"\n   Top 5 combinazioni:")
+    print(f"\nTop 5 combinazioni migliori:")
     print(validi[["eps", "min_samples", "n_clusters", "pct_outliers", "silhouette"]].to_string(index=False))
     
     print(f"\n6. Applicazione DBSCAN con i parametri ottimali...")

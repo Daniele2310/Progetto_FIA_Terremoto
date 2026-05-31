@@ -17,6 +17,7 @@ Pipeline eseguita:
 import sys
 import time
 import warnings
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -55,6 +56,61 @@ CV_FOLDS = 5                   # fold per la cross-validation
 SCORING = "f1_micro"           # metrica primaria della Grid Search
 RANDOM_STATE = 42
 N_JOBS = 1                     # disabilita parallelizzazione (evita deadlock su Windows)
+
+
+# ---------------------------------------------------------------------------
+# Classe Spinner per mostrare il progresso in tempo reale
+# ---------------------------------------------------------------------------
+
+class ProgressSpinner:
+    """Spinner ASCII che mostra il progresso durante il fitting di GridSearchCV."""
+    
+    SPINNERS = ["|", "/", "-", "\\"]
+    
+    def __init__(self, total_fits, verbose=True):
+        self.total_fits = total_fits
+        self.verbose = verbose
+        self.running = False
+        self.thread = None
+        self.start_time = time.time()
+        self.spinner_idx = 0
+    
+    def start(self):
+        """Avvia lo spinner in un thread separato."""
+        if not self.verbose:
+            return
+        self.running = True
+        self.thread = threading.Thread(target=self._spin, daemon=True)
+        self.thread.start()
+    
+    def stop(self):
+        """Ferma lo spinner."""
+        if not self.verbose:
+            return
+        self.running = False
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=2.0)
+        # Pulisci la riga dello spinner
+        try:
+            sys.stdout.write("\r" + " " * 80 + "\r")
+            sys.stdout.flush()
+        except:
+            pass
+    
+    def _spin(self):
+        """Loop dello spinner che gira mentre il fitting è in corso."""
+        while self.running:
+            try:
+                elapsed = time.time() - self.start_time
+                spinner_char = self.SPINNERS[self.spinner_idx % len(self.SPINNERS)]
+                msg = f"  {spinner_char} Tuning in corso... ({elapsed:.0f}s)"
+                sys.stdout.write("\r" + msg)
+                sys.stdout.flush()
+                self.spinner_idx += 1
+                time.sleep(0.5)
+            except:
+                # Ignora qualsiasi errore nel thread dello spinner
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -128,11 +184,12 @@ class GridSearchLogger:
         
         if self.verbose:
             print(f"\n  {'─' * 76}")
-            print(f"  📊 RIEPILOGO TUNING IPERPARAMETRI")
+            print(f"  RIEPILOGO TUNING IPERPARAMETRI")
             print(f"  {'─' * 76}")
-            print(f"  ⏱️  Tempo totale: {elapsed:.1f}s")
-            print(f"  🎯 Miglior score CV: {best_score:.4f}")
-            print(f"  🏆 Parametri migliori:")
+            print(f"  Tempo totale: {elapsed:.1f}s")
+            print(f"  Miglior score CV: {best_score:.4f}")
+            print(f"  Parametri migliori:")
+            sys.stdout.flush()
             
             for k, v in best_params_dict.items():
                 k_clean = k.replace("clf__", "").replace("scaler__", "")
@@ -146,9 +203,10 @@ class GridSearchLogger:
                     v_str = str(v)
                 
                 if desc:
-                    print(f"    • {k_it} = {v_str}  ({desc})")
+                    print(f"    {k_it} = {v_str}  ({desc})")
                 else:
-                    print(f"    • {k_it} = {v_str}")
+                    print(f"    {k_it} = {v_str}")
+            sys.stdout.flush()
 
 
 
@@ -325,13 +383,22 @@ def esegui_grid_search(X_train, y_train, X_val, y_val, configs=None, verbose=Tru
             print(f"  Combinazioni da valutare: {n_combinazioni} x {CV_FOLDS} fold = "
                   f"{total_fits} fit totali")
             print(f"{'=' * 80}")
+            sys.stdout.flush()
 
         start = time.time()
 
         # Logger personalizzato per grid search
         logger = GridSearchLogger(total_fits, n_combinazioni, verbose=verbose)
 
-        # Crea la GridSearchCV con verbose ridotto (non stampa ogni fit)
+        if verbose:
+            print(f"  Inizio tuning... (visualizza progressi candidato per candidato)\n")
+            sys.stdout.flush()
+
+        # Crea lo spinner per mostrare il progresso
+        spinner = ProgressSpinner(total_fits, verbose=verbose)
+        spinner.start()
+
+        # Crea la GridSearchCV con verbose=0 (lo spinner mostrerà il progresso)
         grid = GridSearchCV(
             estimator=pipeline,
             param_grid=param_grid,
@@ -339,13 +406,20 @@ def esegui_grid_search(X_train, y_train, X_val, y_val, configs=None, verbose=Tru
             scoring=SCORING,
             n_jobs=N_JOBS,
             refit=True,
-            verbose=0,  # Niente log grezzi - usiamo il nostro logger
+            verbose=0,  # Niente messaggi [CV] - usa solo lo spinner
             error_score="raise",
         )
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             grid.fit(X_train, y_train)
+        
+        # Ferma lo spinner
+        spinner.stop()
+        
+        if verbose:
+            print("\n  ✓ Tuning completato")
+            sys.stdout.flush()
 
         tempo = time.time() - start
         
@@ -354,7 +428,8 @@ def esegui_grid_search(X_train, y_train, X_val, y_val, configs=None, verbose=Tru
 
         # Predizione sul validation set
         if verbose:
-            print(f"\n  🔍 Predizione sul validation set...")
+            print(f"\n  Predizione sul validation set...")
+            sys.stdout.flush()
         y_pred = grid.best_estimator_.predict(X_val)
         f1_val = f1_score(y_val, y_pred, average="micro")
         acc_val = accuracy_score(y_val, y_pred)
