@@ -1574,9 +1574,9 @@ def main():
 
             # Prova a ricavare una etichetta leggibile per la strategia di imputazione
             try:
-                from src.preprocessing.imputation_strategies import STRATEGIE_IMPUTAZIONE
+                from src.preprocessing.imputation_strategies import STRATEGIE_IMPUTAZIONE as STRATEGIE_IMPUTAZIONE_REGISTRY
             except Exception:
-                STRATEGIE_IMPUTAZIONE = {}
+                STRATEGIE_IMPUTAZIONE_REGISTRY = {}
 
             strategia_usata = None
             if imputation_reports:
@@ -1584,10 +1584,10 @@ def main():
 
             strategia_readable = strategia_usata
             if isinstance(strategia_usata, str):
-                if strategia_usata in STRATEGIE_IMPUTAZIONE:
-                    strategia_readable = STRATEGIE_IMPUTAZIONE[strategia_usata].nome_menu
+                if strategia_usata in STRATEGIE_IMPUTAZIONE_REGISTRY:
+                    strategia_readable = STRATEGIE_IMPUTAZIONE_REGISTRY[strategia_usata].nome_menu
                 else:
-                    for strat in STRATEGIE_IMPUTAZIONE.values():
+                    for strat in STRATEGIE_IMPUTAZIONE_REGISTRY.values():
                         if getattr(strat, "nome_report", None) == strategia_usata:
                             strategia_readable = getattr(strat, "nome_menu")
                             break
@@ -1633,16 +1633,16 @@ def main():
         strategia_usata = next(iter(imputation_reports.values()))["strategia"]
         # Proviamo a ottenere una etichetta leggibile dalla registry delle strategie
         try:
-            from src.preprocessing.imputation_strategies import STRATEGIE_IMPUTAZIONE
+            from src.preprocessing.imputation_strategies import STRATEGIE_IMPUTAZIONE as STRATEGIE_IMPUTAZIONE_REGISTRY
         except Exception:
-            STRATEGIE_IMPUTAZIONE = {}
+            STRATEGIE_IMPUTAZIONE_REGISTRY = {}
 
         strategia_readable = strategia_usata
         if isinstance(strategia_usata, str):
-            if strategia_usata in STRATEGIE_IMPUTAZIONE:
-                strategia_readable = STRATEGIE_IMPUTAZIONE[strategia_usata].nome_menu
+            if strategia_usata in STRATEGIE_IMPUTAZIONE_REGISTRY:
+                strategia_readable = STRATEGIE_IMPUTAZIONE_REGISTRY[strategia_usata].nome_menu
             else:
-                for strat in STRATEGIE_IMPUTAZIONE.values():
+                for strat in STRATEGIE_IMPUTAZIONE_REGISTRY.values():
                     if getattr(strat, 'nome_report', None) == strategia_usata:
                         strategia_readable = getattr(strat, 'nome_menu')
                         break
