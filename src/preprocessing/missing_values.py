@@ -303,13 +303,15 @@ class MissingValuesHandler:
         """
         Seleziona feature numeriche da usare come predittori.
         """
+        exclude_cols = {colonna_target, 'building_id', 'geo_level_1_id', 'geo_level_2_id', 'geo_level_3_id'}
+
         if feature_cols is None:
             feature_cols = [
                 c for c in df.select_dtypes(include=[np.number]).columns
-                if c not in {colonna_target, 'building_id'}
+                if c not in exclude_cols
             ]
 
-        feature_cols = [c for c in feature_cols if c in df.columns and c != colonna_target]
+        feature_cols = [c for c in feature_cols if c in df.columns and c not in exclude_cols]
 
         if not feature_cols:
             raise ValueError(
@@ -328,6 +330,18 @@ class MissingValuesHandler:
         mediane = X_train.median(numeric_only=True)
         X_train = X_train.fillna(mediane)
         X_test = X_test.fillna(mediane)
+
+        scaler = StandardScaler()
+        X_train = pd.DataFrame(
+            scaler.fit_transform(X_train),
+            columns=feature_cols,
+            index=X_train.index,
+        )
+        X_test = pd.DataFrame(
+            scaler.transform(X_test),
+            columns=feature_cols,
+            index=X_test.index,
+        )
 
         return X_train, X_test
 
