@@ -6,8 +6,8 @@ MENU PRINCIPALE:
   FASE 2  - Imputazione           : strategia sui NaN generati dagli outlier
                                     [nota: monum_flag aggiunta DOPO outlier+imputazione]
   FASE 3  - Geo-Level Embedding   : rete neurale per feature geografiche
-  FASE 4  - Scelta modello        : KNN / Albero Decisionale / Random Forest
-                                    [DA IMPLEMENTARE] Multi-Esperto (AdaBoost / SVM)
+  FASE 4  - Scelta modello        : KNN / Albero Decisionale / SVM
+                                    Multi-Esperto (Random Forest + KNN + Decision Tree)
   FASE 5  - Presentazione risultati (F1-Micro)
 """
 
@@ -42,6 +42,7 @@ from src.preprocessing.geo_features import GeoFeatureEngineer
 from src.Modelli.knn import train_knn
 from src.Modelli.randomforest import train_randomforest
 from src.Modelli.decisiontree import train_decisiontree
+from src.Modelli.svm import train_svm
 
 # === Ensemble ===
 from src.ensemble.multi_expert_system import MultiExpertSystem, ExpertSpec
@@ -321,7 +322,7 @@ def valuta_fs_dinamica_per_modello(
     """
     Valuta TUTTI i metodi di Feature Selection (come evaluate_feature_selection.py)
     su un campione e seleziona il migliore in base al modello scelto.
-    
+
     Metodi testati:
     1. PCA (Elbow Method)
     2. Lasso Embedded
@@ -333,17 +334,17 @@ def valuta_fs_dinamica_per_modello(
     8. Bidirectional Subset Selection
     9. Max-Min Subset Selection
     10. Best First Search
-    
+
     Args:
         X_train: feature di training completo (con geo-embedding)
         y_train: target di training completo
-        scelta_modello: '1' (KNN), '2' (DT), '3' (RF)
+        scelta_modello: '1' (KNN), '2' (DT), '3' (SVM), '4' (Multi-Esperto → usa KNN come proxy)
         modalita: 'fast', 'balanced', 'thorough' (determina sample_size e CV fold)
         sample_size: numero di righe da usare (se None, viene calcolato dalla modalità)
         max_features: numero massimo di feature da selezionare
         max_rows_subset: righe max per subset selection (velocità)
         subset_cv_folds: fold per CV nei subset selector
-        
+
     Returns:
         dict con:
         - 'metodo': migliore metodo FS
@@ -592,7 +593,12 @@ def valuta_fs_dinamica_per_modello(
             elif scelta_modello == "2":
                 modello_info = train_decisiontree(X_train_fs, y_train_fs, X_val_fs, y_val_fs, verbose=True)
             elif scelta_modello == "3":
-                modello_info = train_randomforest(X_train_fs, y_train_fs, X_val_fs, y_val_fs, verbose=True)
+                modello_info = train_svm(X_train_fs, y_train_fs, X_val_fs, y_val_fs, verbose=False)
+            elif scelta_modello == "4":
+                # Multi-Esperto: usa Random Forest come proxy durante la FS (il sistema
+                # completo sarebbe troppo lento su un campione iterato per ogni metodo FS)
+                print(f"    (Multi-Esperto: uso Random Forest come proxy per la valutazione FS)")
+                modello_info = train_randomforest(X_train_fs, y_train_fs, X_val_fs, y_val_fs, verbose=False)
             else:
                 print(f"    ⚠️  Modello {scelta_modello} non supportato")
                 continue
@@ -749,16 +755,16 @@ def menu_scelta_modello() -> str:
     Modelli disponibili:
         1 -> KNN
         2 -> Albero Decisionale
-        3 -> Random Forest
-        4 -> [DA IMPLEMENTARE] Multi-Esperto (AdaBoost / SVM)
+        3 -> SVM (Support Vector Machine)
+        4 -> Random Forest
 
     Ritorna stringa '1'-'4'.
     """
     _banner("FASE 4 — SCELTA MODELLO")
-    print("  1) KNN               — K-Nearest Neighbors")
+    print("  1) KNN                — K-Nearest Neighbors")
     print("  2) Albero Decisionale — Decision Tree")
-    print("  3) Random Forest      — ensemble di alberi")
-    print("  4) Multi-Esperto      — AdaBoost / SVM  [DA IMPLEMENTARE]")
+    print("  3) SVM                — Support Vector Machine (LinearSVC, One-vs-Rest)")
+    print("  4) Random Forest      — ensemble di alberi decisionali")
     print()
     try:
         scelta = input("Seleziona modello [1-4] (default=1): ").strip()
@@ -770,16 +776,10 @@ def menu_scelta_modello() -> str:
     nomi = {
         "1": "KNN",
         "2": "Albero Decisionale",
-        "3": "Random Forest",
-        "4": "Multi-Esperto [DA IMPLEMENTARE]",
+        "3": "SVM",
+        "4": "Random Forest",
     }
     print(f"\n>> Modello selezionato: {nomi[scelta]}")
-
-    if scelta == "4":
-        print("\n" + "!" * 80)
-        print("  SEZIONE MULTI-ESPERTO NON ANCORA IMPLEMENTATA.")
-        print("  Seleziona un'altra opzione oppure procedi per testare il placeholder.")
-        print("!" * 80)
 
     return scelta
 
@@ -858,16 +858,18 @@ def train_multi_expert_system(
 ) -> dict:
     """
     Addestra un sistema multi-esperto con Random Forest, KNN e Decision Tree.
-    
-    Gli esperti vengono addestrati singolarmente, poi aggregati con weighted_mean.
-    
+
+    Il Random Forest è integrato in questa sezione come esperto del sistema
+    combinato. Gli esperti vengono addestrati singolarmente, poi aggregati
+    con la regola ``weighted_mean`` del decision profile.
+
     Args:
         X_train: feature di training (DataFrame)
         y_train: target di training (Series)
         X_val: feature di validation (DataFrame)
         y_val: target di validation (Series)
         verbose: stampe a console
-        
+
     Returns:
         dict con chiavi:
         - "model": modello MultiExpertSystem addestrato
@@ -879,10 +881,10 @@ def train_multi_expert_system(
         print(f"\n{'='*80}")
         print("MODELLO MULTI-ESPERTO (Random Forest + KNN + Decision Tree)")
         print(f"{'='*80}\n")
-    
+
     # Addestra gli esperti singolarmente per estrarre i modelli migliori
     print("  Addestramento esperti singoli...")
-    
+
     try:
         rf_result = train_randomforest(X_train, y_train, X_val, y_val, verbose=True)
         rf_f1 = rf_result.get('metrics', {}).get('f1_micro', 0)
@@ -890,7 +892,7 @@ def train_multi_expert_system(
     except Exception as e:
         print(f"    ❌ Errore RF: {e}")
         rf_result = None
-    
+
     try:
         knn_result = train_knn(X_train, y_train, X_val, y_val, verbose=False)
         knn_f1 = knn_result.get('metrics', {}).get('f1_micro', 0)
@@ -898,7 +900,7 @@ def train_multi_expert_system(
     except Exception as e:
         print(f"    ❌ Errore KNN: {e}")
         knn_result = None
-    
+
     try:
         dt_result = train_decisiontree(X_train, y_train, X_val, y_val, verbose=False)
         dt_f1 = dt_result.get('metrics', {}).get('f1_micro', 0)
@@ -906,14 +908,14 @@ def train_multi_expert_system(
     except Exception as e:
         print(f"    ❌ Errore DT: {e}")
         dt_result = None
-    
+
     # Crea il sistema multi-esperto
     if not any([rf_result, knn_result, dt_result]):
         raise ValueError("Nessun esperto è stato addestrato con successo.")
-    
+
     experts = []
     best_params = {}
-    
+
     if rf_result:
         experts.append(ExpertSpec(
             name="Random Forest",
@@ -921,7 +923,7 @@ def train_multi_expert_system(
             weight=1.0
         ))
         best_params["rf"] = rf_result.get("best_params", {})
-    
+
     if knn_result:
         experts.append(ExpertSpec(
             name="KNN",
@@ -929,7 +931,7 @@ def train_multi_expert_system(
             weight=1.0
         ))
         best_params["knn"] = knn_result.get("best_params", {})
-    
+
     if dt_result:
         experts.append(ExpertSpec(
             name="Decision Tree",
@@ -937,29 +939,29 @@ def train_multi_expert_system(
             weight=1.0
         ))
         best_params["dt"] = dt_result.get("best_params", {})
-    
+
     print(f"\n  Creazione sistema multi-esperto ({len(experts)} esperti)...")
     multi_expert_system = MultiExpertSystem(experts, aggregation="weighted_mean")
     multi_expert_system.fit(X_train, y_train)
     print(f"  ✓ Sistema multi-esperto creato e addestrato")
-    
+
     # Valutazione sul validation set
     y_pred = multi_expert_system.predict(X_val)
     f1_micro_val = f1_score(y_val, y_pred, average="micro", zero_division=0)
     accuracy_val = accuracy_score(y_val, y_pred)
-    
+
     if verbose:
         print(f"\n  📊 Metriche su VALIDATION set:")
         print(f"    - F1 Micro:              {f1_micro_val:.4f}")
         print(f"    - Accuracy:              {accuracy_val:.4f}")
-        
+
         # Mostra contributi esperti
         diversity_df = multi_expert_system.diversity_report(X_val, y_val)
         if not diversity_df.empty:
             print(f"\n  🤝 Diversità tra esperti:")
             print(f"    - Disagreement (media):  {diversity_df['disagreement'].mean():.4f}")
             print(f"    - Double Fault (media):  {diversity_df['double_fault'].mean():.4f}")
-    
+
     return {
         "model": multi_expert_system,
         "best_params": best_params,
@@ -979,7 +981,7 @@ def esegui_modello(
 ) -> dict:
     """
     Fase 4: addestramento del modello scelto con hyperparameter tuning.
-    
+
     La pipeline:
     1. Estrae le feature selezionate dai dati
     2. Fa split train/validation (80/20) stratificato
@@ -988,32 +990,32 @@ def esegui_modello(
     5. Ritorna metriche e modello
 
     Args:
-        scelta_modello: '1' (KNN), '2' (DT), '3' (RF), '4' (Multi-Esperto)
+        scelta_modello: '1' (KNN), '2' (DT), '3' (SVM), '4' (Multi-Esperto)
         train_values: features di training (con geo-feature già aggiunte)
         train_labels: target di training
         selected_features: lista di feature selezionate
-        
+
     Returns:
         dizionario con risultati, metriche, modello e feature usate
     """
     _banner("FASE 4 — ADDESTRAMENTO MODELLO")
-    
+
     # === Preparazione dati ===
     print(f"\n  Preparazione dati...")
     print(f"  Feature selezionate: {len(selected_features)}")
     print(f"  Prime 5 feature: {selected_features[:5]}")
-    
+
     # Verifica che le feature selezionate esistano nei dati
     feature_mancanti = [f for f in selected_features if f not in train_values.columns]
     if feature_mancanti:
         print(f"  ⚠ Feature non trovate: {feature_mancanti}")
         selected_features = [f for f in selected_features if f in train_values.columns]
         print(f"  ✓ Usando {len(selected_features)} feature disponibili")
-    
+
     # Estrai X (solo feature selezionate) e y
     X = train_values[selected_features].copy()
     y = train_labels.copy()
-    
+
     # === Split train/validation ===
     print(f"\n  Split stratificato train/validation (80/20)...")
     X_train, X_val, y_train, y_val = train_test_split(
@@ -1022,7 +1024,7 @@ def esegui_modello(
         random_state=42,
         stratify=y
     )
-    
+
     print(f"  Train: {X_train.shape[0]} righe")
     print(f"  Validation: {X_val.shape[0]} righe")
     print(f"  Feature usate: {X_train.shape[1]}")
@@ -1030,27 +1032,27 @@ def esegui_modello(
     # === Selezione e addestramento modello ===
     nome_modello = None
     modello_info = None
-    
+
     if scelta_modello == "1":
         nome_modello = "K-Nearest Neighbors (KNN)"
         print(f"\n  Addestramento: {nome_modello}")
         modello_info = train_knn(X_train, y_train, X_val, y_val, verbose=True)
-        
+
     elif scelta_modello == "2":
         nome_modello = "Decision Tree"
         print(f"\n  Addestramento: {nome_modello}")
         modello_info = train_decisiontree(X_train, y_train, X_val, y_val, verbose=True)
-        
+
     elif scelta_modello == "3":
+        nome_modello = "SVM (LinearSVC, One-vs-Rest)"
+        print(f"\n  Addestramento: {nome_modello}")
+        modello_info = train_svm(X_train, y_train, X_val, y_val, verbose=True)
+
+    elif scelta_modello == "4":
         nome_modello = "Random Forest"
         print(f"\n  Addestramento: {nome_modello}")
         modello_info = train_randomforest(X_train, y_train, X_val, y_val, verbose=True)
-        
-    elif scelta_modello == "4":
-        nome_modello = "Multi-Esperto (Random Forest + KNN + Decision Tree)"
-        print(f"\n  Addestramento: {nome_modello}")
-        modello_info = train_multi_expert_system(X_train, y_train, X_val, y_val, verbose=True)
-        
+
     else:
         print("  ERRORE: modello non riconosciuto.")
         return None
@@ -1659,8 +1661,8 @@ def main():
     nomi_modelli = {
         "1": "KNN",
         "2": "Albero Decisionale",
-        "3": "Random Forest",
-        "4": "Multi-Esperto [DA IMPLEMENTARE]",
+        "3": "SVM",
+        "4": "Random Forest",
     }
     print(f"  ✅ Modello selezionato:     {nomi_modelli.get(scelta_modello, '?')}")
 

@@ -290,6 +290,79 @@ def save_outputs(output_dir: Path, metrics: dict, feature_columns: list[str]) ->
     pd.DataFrame({"feature": feature_columns}).to_csv(output_dir / "svm_features.csv", index=False)
 
 
+def train_svm(
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    X_val: pd.DataFrame,
+    y_val: pd.Series,
+    estimator: str = "linear_svc",
+    c: float = 1.0,
+    class_weight: str = "balanced",
+    verbose: bool = True,
+) -> dict:
+    """
+    Addestra un modello SVM su dati già preprocessati.
+
+    Interfaccia uniforme rispetto a train_knn / train_randomforest /
+    train_decisiontree: accetta DataFrame e Series sklearn-ready e ritorna
+    un dict con chiavi standard.
+
+    Args:
+        X_train: feature di training (numeriche, già standardizzate o no —
+                 la pipeline SVM include uno StandardScaler interno).
+        y_train: target di training (Series).
+        X_val:   feature di validation.
+        y_val:   target di validation.
+        estimator: ``"linear_svc"`` (default, One-vs-Rest) oppure
+                   ``"svc_rbf"`` (kernel RBF, One-vs-One).
+        c:       parametro di regolarizzazione C della SVM.
+        class_weight: ``"balanced"`` (default) o ``"none"``.
+        verbose: se True stampa un riepilogo a console.
+
+    Returns:
+        dict con chiavi:
+        - ``"model"``:       pipeline sklearn addestrata
+        - ``"best_params"``: dict con i parametri usati
+        - ``"metrics"``:     dict con accuracy, f1_micro, f1_macro,
+                             balanced_accuracy, fit_seconds
+        - ``"n_features"``:  numero di feature in input
+    """
+    if verbose:
+        print(f"\n{'='*80}")
+        print(f"MODELLO SVM  (estimator={estimator}, C={c}, class_weight={class_weight})")
+        print(f"{'='*80}\n")
+
+    feature_columns = validate_numeric_features(X_train)
+
+    model = build_svm_pipeline(estimator=estimator, c=c, class_weight=class_weight)
+    scores = evaluate_model(model, X_train, X_val, y_train, y_val)
+
+    best_params = {
+        "estimator": estimator,
+        "C": c,
+        "class_weight": class_weight,
+        "multiclass_strategy": get_multiclass_strategy(estimator),
+    }
+
+    if verbose:
+        print(f"\n{'='*80}")
+        print("RIEPILOGO FINALE SVM")
+        print(f"{'='*80}")
+        print(f"Feature usate:      {len(feature_columns)}")
+        print(f"Accuracy:           {scores['accuracy']:.4f}")
+        print(f"F1-Micro:           {scores['f1_micro']:.4f}")
+        print(f"F1-Macro:           {scores['f1_macro']:.4f}")
+        print(f"Balanced Accuracy:  {scores['balanced_accuracy']:.4f}")
+        print(f"Tempo fit:          {scores['fit_seconds']:.2f}s")
+
+    return {
+        "model": model,
+        "best_params": best_params,
+        "metrics": scores,
+        "n_features": len(feature_columns),
+    }
+
+
 def main() -> dict:
     """Esegue il workflow completo: caricamento dati, split, training e report."""
     args = parse_args()
