@@ -1063,7 +1063,7 @@ def esegui_modello(
 
     # === Preparazione risultati ===
     print(f"\n  Preparazione risultati...")
-    
+
     risultati = {
         "scelta_modello": scelta_modello,
         "nome_modello": nome_modello,
@@ -1076,11 +1076,115 @@ def esegui_modello(
         "X_val": X_val,
         "y_val": y_val,
     }
-    
+
     # Aggiungi metriche se disponibili
     if "metrics" in modello_info:
         risultati.update(modello_info["metrics"])
-    
+
+    # === Diagnostica Overfitting ===
+    # Calcola F1-Micro sul TRAINING set per confrontarlo con il VALIDATION set.
+    # Un gap elevato (train >> val) indica overfitting.
+    modello_addestrato = modello_info.get("model")
+    if modello_addestrato is not None:
+        try:
+            from sklearn.base import clone
+            from sklearn.model_selection import StratifiedKFold, cross_val_score
+
+            print(f"\n  {'─'*76}")
+            print(f"  📊 DIAGNOSTICA OVERFITTING")
+            print(f"  {'─'*76}")
+
+            # ── 1. Train vs Validation ──────────────────────────────────────
+            y_pred_train = modello_addestrato.predict(X_train)
+            f1_train = f1_score(y_train, y_pred_train, average="micro", zero_division=0)
+
+            f1_val = modello_info.get("metrics", {}).get("f1_micro")
+            if f1_val is None:
+                y_pred_val = modello_addestrato.predict(X_val)
+                f1_val = f1_score(y_val, y_pred_val, average="micro", zero_division=0)
+
+            gap = f1_train - f1_val
+            gap_pct = gap * 100
+
+            print(f"\n  [1] Train vs Validation")
+            print(f"      F1-Micro TRAIN:      {f1_train:.4f}")
+            print(f"      F1-Micro VALIDATION: {f1_val:.4f}")
+            print(f"      Gap (train - val):   {gap:+.4f}  ({gap_pct:+.1f}%)")
+
+            if gap > 0.10:
+                print(f"      ⚠️  POSSIBILE OVERFITTING — gap > 10%")
+                print(f"         Considera: regolarizzazione più forte, più dati, pruning.")
+            elif gap > 0.05:
+                print(f"      ⚡ Leggero overfitting — gap tra 5% e 10%.")
+            elif gap < -0.02:
+                print(f"      ℹ️  Gap negativo (val > train): validation set favorevole")
+                print(f"         o class_weight=balanced che aiuta le classi rare.")
+            else:
+                print(f"      ✅ Nessun overfitting significativo — gap ≤ 5%.")
+
+            risultati["f1_micro_train"] = round(f1_train, 4)
+            risultati["overfitting_gap"] = round(gap, 4)
+
+            # ── 2. Cross-Validation 5-fold ──────────────────────────────────
+            print(f"\n  [2] Cross-Validation 5-fold stratificata (su training set)")
+
+            # Campiona max 20k righe per mantenere tempi ragionevoli
+            CV_MAX_ROWS = 20_000
+            if len(X_train) > CV_MAX_ROWS:
+                X_cv, _, y_cv, _ = train_test_split(
+                    X_train, y_train,
+                    train_size=CV_MAX_ROWS,
+                    random_state=42,
+                    stratify=y_train,
+                )
+                print(f"      (campione {CV_MAX_ROWS} righe su {len(X_train)} per velocità)")
+            else:
+                X_cv, y_cv = X_train, y_train
+
+            try:
+                estimatore_cv = clone(modello_addestrato)
+            except Exception:
+                # Se clone non riesce (es. MultiExpertSystem), salta la CV
+                raise RuntimeError("clone() non supportato per questo modello.")
+
+            cv_strategy = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+            cv_scores = cross_val_score(
+                estimatore_cv, X_cv, y_cv,
+                cv=cv_strategy,
+                scoring="f1_micro",
+                n_jobs=1,
+            )
+
+            cv_mean = cv_scores.mean()
+            cv_std  = cv_scores.std()
+
+            print(f"      Scores per fold: {' | '.join(f'{s:.4f}' for s in cv_scores)}")
+            print(f"      Media:  {cv_mean:.4f}")
+            print(f"      Std:    {cv_std:.4f}")
+
+            # Confronto CV mean vs validation holdout
+            cv_val_diff = cv_mean - f1_val
+            print(f"      CV media vs Validation: {cv_val_diff:+.4f}")
+            if abs(cv_val_diff) <= 0.02:
+                print(f"      ✅ CV ≈ Validation — stima holdout affidabile.")
+            elif cv_val_diff > 0.02:
+                print(f"      ⚡ CV > Validation — il validation set è leggermente difficile.")
+            else:
+                print(f"      ⚡ CV < Validation — il validation set è leggermente facile.")
+
+            # Stabilità: std alta = modello instabile tra fold
+            if cv_std > 0.03:
+                print(f"      ⚠️  Alta varianza tra fold (std > 3%) — modello instabile.")
+                print(f"         Prova più dati o regolarizzazione più forte.")
+            else:
+                print(f"      ✅ Bassa varianza tra fold (std ≤ 3%) — modello stabile.")
+
+            risultati["cv_f1_mean"] = round(cv_mean, 4)
+            risultati["cv_f1_std"]  = round(cv_std, 4)
+
+        except Exception as e:
+            print(f"  ⚠️  Impossibile calcolare diagnostica overfitting: {e}")
+
     return risultati
 
 
