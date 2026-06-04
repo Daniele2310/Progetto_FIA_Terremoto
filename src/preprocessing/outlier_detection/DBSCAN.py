@@ -71,6 +71,8 @@ N_EPS_VALUES = 10
 # Soglie per filtrare combinazioni degeneri
 OUTLIER_PCT_MIN = 1.0    # percentuale minima di outlier accettabile
 OUTLIER_PCT_MAX = 30.0   # percentuale massima di outlier accettabile
+SILHOUETTE_SAMPLE_SIZE = 2000
+RANDOM_STATE = 42
 # -----------------------------------------------------------------------------
 
 
@@ -82,7 +84,25 @@ def carica_dati():
     )
     return train_values
 
-def calcola_range_eps(X, min_samples_values):
+def comprimi_punti_duplicati(X):
+    """
+    Comprimi i punti duplicati mantenendo una mappatura completa verso il dataset
+    originale. Con DBSCAN + sample_weight il risultato finale rimane equivalente,
+    ma il costo computazionale cala drasticamente quando ci sono molte righe ripetute.
+
+    Returns:
+        tuple: (X_unique, inverse_indices, sample_weight)
+            - X_unique: array con i punti unici
+            - inverse_indices: per ricostruire le label originali via labels[inverse_indices]
+            - sample_weight: numero di occorrenze di ciascun punto unico
+    """
+    X_unique, inverse_indices, sample_weight = np.unique(
+        np.asarray(X), axis=0, return_inverse=True, return_counts=True
+    )
+    return X_unique, inverse_indices, sample_weight.astype(np.int32, copy=False)
+
+
+def calcola_range_eps(X, min_samples_values, sample_weight=None):
     """
     Calcola un range ragionevole di valori eps basandosi sulle k-distanze.
 
@@ -100,30 +120,56 @@ def calcola_range_eps(X, min_samples_values):
     """
     print("\nStima del range di eps tramite K-distance analysis:")
     print("-" * 70)
-    
+
     all_eps_candidates = []
     k_distances_dict = {}
-    
+
+    max_k = max(min_samples_values)
+    n_neighbors = min(max_k, len(X))
+    if n_neighbors < max_k:
+        raise ValueError(
+            f"Impossibile calcolare le k-distanze fino a k={max_k}: "
+            f"sono disponibili solo {len(X)} punti."
+        )
+
+    neigh = NearestNeighbors(n_neighbors=n_neighbors, n_jobs=-1)
+    neigh.fit(X)
+    distances, indices = neigh.kneighbors(X)
+
+    if sample_weight is not None:
+        neighbor_weights = sample_weight[indices]
+        cumulative_weights = np.cumsum(neighbor_weights, axis=1)
+        row_idx = np.arange(len(X))
+
     for k in min_samples_values:
-        neigh = NearestNeighbors(n_neighbors=k, n_jobs=-1)
-        neigh.fit(X)
-        distances, _ = neigh.kneighbors(X)
-        
-        k_dist = np.sort(distances[:, -1])
+        if sample_weight is None:
+            k_dist = np.sort(distances[:, k - 1])
+        else:
+            if np.any(cumulative_weights[:, -1] < k):
+                raise ValueError(
+                    f"Impossibile stimare la distanza per k={k}: il grafo dei vicini "
+                    f"non accumula abbastanza peso per almeno un punto."
+                )
+            kth_positions = np.argmax(cumulative_weights >= k, axis=1)
+            k_dist_unique = distances[row_idx, kth_positions]
+            # Ripetiamo le distanze in base alle occorrenze per mantenere gli stessi
+            # percentili che avremmo osservato sul dataset espanso.
+            k_dist = np.sort(np.repeat(k_dist_unique, sample_weight))
+
         k_distances_dict[k] = k_dist
-        
+
         # Raccogliamo candidati eps dai percentili chiave
         for pct in [90, 92, 94, 95, 96, 97, 98, 99]:
             all_eps_candidates.append(np.percentile(k_dist, pct))
-        
+
         print(f"  k={k:2d}  min_distanza={k_dist[0]:8.3f}  max_distanza={k_dist[-1]:8.3f}")
-    
+
     eps_min = max(np.min(all_eps_candidates), 0.01)  # almeno 0.01
     eps_max = np.max(all_eps_candidates)
-    
+
     print("-" * 70)
     print(f"Range eps stimato: [{eps_min:.4f}, {eps_max:.4f}]")
-    
+
     return eps_min, eps_max, k_distances_dict
 
 
@@ -153,7 +199,17 @@ def salva_k_distance_graph(k_distances_dict, output_dir):
     print(f"Grafico K-distance salvato in: {plot_path}")
 
 
-def esegui_grid_search_dbscan(X, eps_values, min_samples_values, verbose=True):
+def esegui_grid_search_dbscan(
+    X,
+    eps_values,
+    min_samples_values,
+    verbose=True,
+    sample_weight=None,
+    inverse_indices=None,
+    X_full=None,
+    silhouette_sample_size=SILHOUETTE_SAMPLE_SIZE,
+    random_state=RANDOM_STATE,
+):
     """
     Esegue una Grid Search manuale su DBSCAN.
 
@@ -188,22 +244,27 @@ def esegui_grid_search_dbscan(X, eps_values, min_samples_values, verbose=True):
     risultati = []
     miglior_score = -1
     miglior_combinazione = None
-    
+
+    n_punti_totali = int(sample_weight.sum()) if sample_weight is not None else len(X)
+
     for i, eps in enumerate(eps_values):
         for j, min_samples in enumerate(min_samples_values):
             idx = i * len(min_samples_values) + j + 1
-            
-            start = time.time()
-            
+
+            combo_start = time.time()
+
             dbscan = DBSCAN(eps=eps, min_samples=min_samples, n_jobs=-1)
-            labels = dbscan.fit_predict(X)
-            
-            tempo = time.time() - start
-            
+            labels = dbscan.fit_predict(X, sample_weight=sample_weight)
+
+            tempo = time.time() - combo_start
+
             n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-            n_outliers = np.sum(labels == -1)
-            pct_outliers = (n_outliers / len(labels)) * 100
-            
+            if sample_weight is None:
+                n_outliers = int(np.sum(labels == -1))
+            else:
+                n_outliers = int(sample_weight[labels == -1].sum())
+            pct_outliers = (n_outliers / n_punti_totali) * 100
+
             # -- Verifica se il risultato è degenere --
             # Caso 1: nessun cluster trovato (tutti outlier)
             if n_clusters == 0:
@@ -217,7 +278,7 @@ def esegui_grid_search_dbscan(X, eps_values, min_samples_values, verbose=True):
                     "tempo_s": tempo, "valido": False, "motivo_scarto": "0 cluster"
                 })
                 continue
-            
+
             # Caso 2: un solo cluster (tutti nello stesso cluster, nessuna separazione)
             if n_clusters == 1:
                 if verbose:
@@ -230,7 +291,7 @@ def esegui_grid_search_dbscan(X, eps_values, min_samples_values, verbose=True):
                     "tempo_s": tempo, "valido": False, "motivo_scarto": "1 solo cluster"
                 })
                 continue
-            
+
             # Caso 3: troppi o troppo pochi outlier
             if pct_outliers < OUTLIER_PCT_MIN or pct_outliers > OUTLIER_PCT_MAX:
                 motivo = f"outlier {pct_outliers:.1f}% fuori range [{OUTLIER_PCT_MIN}, {OUTLIER_PCT_MAX}]%"
@@ -244,37 +305,71 @@ def esegui_grid_search_dbscan(X, eps_values, min_samples_values, verbose=True):
                     "tempo_s": tempo, "valido": False, "motivo_scarto": motivo
                 })
                 continue
-            
+
             # -- Calcolo Silhouette Score (solo sugli inlier) --
             mask_inlier = labels != -1
-            
-            # Servono almeno 2 campioni per il Silhouette Score
+
             if mask_inlier.sum() < 2:
+                risultati.append({
+                    "eps": eps, "min_samples": min_samples,
+                    "n_clusters": n_clusters, "n_outliers": n_outliers,
+                    "pct_outliers": pct_outliers, "silhouette": np.nan,
+                    "tempo_s": time.time() - combo_start,
+                    "valido": False,
+                    "motivo_scarto": "meno di 2 inlier"
+                })
                 continue
-            
-            # Campionamento per velocizzare il calcolo su dataset grandi
-            n_inlier = mask_inlier.sum()
-            if n_inlier > 10000:
-                rng = np.random.RandomState(42)
-                idx_inlier = np.where(mask_inlier)[0]
-                sample_idx = rng.choice(idx_inlier, size=10000, replace=False)
-                sil_score = silhouette_score(X[sample_idx], labels[sample_idx])
-            else:
-                sil_score = silhouette_score(X[mask_inlier], labels[mask_inlier])
-            
+
+            labels_full = labels if inverse_indices is None else labels[inverse_indices]
+            X_silhouette = X if X_full is None else X_full
+            mask_inlier_full = labels_full != -1
+            labels_inlier = labels_full[mask_inlier_full]
+
+            if len(np.unique(labels_inlier)) < 2:
+                risultati.append({
+                    "eps": eps, "min_samples": min_samples,
+                    "n_clusters": n_clusters, "n_outliers": n_outliers,
+                    "pct_outliers": pct_outliers, "silhouette": np.nan,
+                    "tempo_s": time.time() - combo_start,
+                    "valido": False,
+                    "motivo_scarto": "silhouette non calcolabile (meno di 2 cluster inlier)"
+                })
+                continue
+
+            try:
+                X_inlier = X_silhouette[mask_inlier_full]
+                sil_kwargs = {}
+                if len(labels_inlier) > silhouette_sample_size:
+                    sil_kwargs = {
+                        "sample_size": silhouette_sample_size,
+                        "random_state": random_state,
+                    }
+                sil_score = silhouette_score(X_inlier, labels_inlier, **sil_kwargs)
+            except ValueError as exc:
+                risultati.append({
+                    "eps": eps, "min_samples": min_samples,
+                    "n_clusters": n_clusters, "n_outliers": n_outliers,
+                    "pct_outliers": pct_outliers, "silhouette": np.nan,
+                    "tempo_s": time.time() - combo_start,
+                    "valido": False,
+                    "motivo_scarto": f"silhouette non calcolabile: {exc}"
+                })
+                continue
+
+            tempo = time.time() - combo_start
             risultati.append({
                 "eps": eps, "min_samples": min_samples,
                 "n_clusters": n_clusters, "n_outliers": n_outliers,
                 "pct_outliers": pct_outliers, "silhouette": sil_score,
                 "tempo_s": tempo, "valido": True, "motivo_scarto": ""
             })
-            
+
             if verbose:
                 status = "MIGLIORE" if sil_score > miglior_score else "OK"
                 print(f"  [{idx:3d}/{n_combinazioni}] eps={eps:.4f}, min_samples={min_samples:3d} "
                       f"| cluster={n_clusters}, outlier={pct_outliers:.1f}%, "
                       f"silhouette={sil_score:.4f}, tempo={tempo:.1f}s  ({status})")
-            
+
             # Aggiorna il migliore
             if sil_score > miglior_score:
                 miglior_score = sil_score
@@ -283,9 +378,9 @@ def esegui_grid_search_dbscan(X, eps_values, min_samples_values, verbose=True):
                     "n_clusters": n_clusters, "n_outliers": n_outliers,
                     "pct_outliers": pct_outliers, "silhouette": sil_score,
                 }
-    
+
     risultati_df = pd.DataFrame(risultati)
-    
+
     return risultati_df, miglior_combinazione
 
 
@@ -344,23 +439,29 @@ def salva_risultati_grid_search(risultati_df, output_dir):
     print(f"Heatmap Grid Search salvata in: {heatmap_path}")
 
 
-def esegui_dbscan(df_scaled, eps, min_samples):
+def esegui_dbscan(df_scaled, eps, min_samples, sample_weight=None, inverse_indices=None):
     """
     Esegue l'algoritmo DBSCAN.
     """
     print(f"\nEsecuzione DBSCAN con eps={eps:.3f} e min_samples={min_samples}...")
     # n_jobs=-1 parallelizza l'esecuzione su tutti i core disponibili della CPU
     dbscan = DBSCAN(eps=eps, min_samples=min_samples, n_jobs=-1)
-    
+
     # Effettua il clustering. I punti classificati come -1 sono considerati Rumore / Outlier
-    labels = dbscan.fit_predict(df_scaled)
-    
-    n_outliers = np.sum(labels == -1)
-    perc_outliers = (n_outliers / len(labels)) * 100
-    
-    print(f"-> Outlier rilevati: {n_outliers} su {len(labels)} punti ({perc_outliers:.2f}%)")
-    
-    return labels
+    labels = dbscan.fit_predict(df_scaled, sample_weight=sample_weight)
+    labels_finali = labels if inverse_indices is None else labels[inverse_indices]
+
+    if sample_weight is None:
+        n_outliers = int(np.sum(labels == -1))
+        n_punti = len(labels_finali)
+    else:
+        n_outliers = int(sample_weight[labels == -1].sum())
+        n_punti = int(sample_weight.sum())
+    perc_outliers = (n_outliers / n_punti) * 100
+
+    print(f"-> Outlier rilevati: {n_outliers} su {n_punti} punti ({perc_outliers:.2f}%)")
+
+    return labels_finali
 
 def rileva_outlier_dbscan(train_values, colonne_continue=COLONNE_CONTINUE):
     """
@@ -400,8 +501,17 @@ def rileva_outlier_dbscan(train_values, colonne_continue=COLONNE_CONTINUE):
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X_num)
 
+    X_unique, inverse_indices, sample_weight = comprimi_punti_duplicati(X_scaled)
+    riduzione_pct = 100 * (1 - len(X_unique) / len(X_scaled))
+    print(
+        f"\nCompressione duplicati: {len(X_scaled)} righe -> {len(X_unique)} punti unici "
+        f"({riduzione_pct:.1f}% in meno)"
+    )
+
     print("\nStima del range di eps tramite K-distance analysis...")
-    eps_min, eps_max, k_distances_dict = calcola_range_eps(X_scaled, MIN_SAMPLES_GRID)
+    eps_min, eps_max, k_distances_dict = calcola_range_eps(
+        X_unique, MIN_SAMPLES_GRID, sample_weight=sample_weight
+    )
 
     eps_values = np.linspace(eps_min, eps_max, N_EPS_VALUES)
     print(f"   Valori eps da testare: {[f'{v:.3f}' for v in eps_values]}")
@@ -413,7 +523,12 @@ def rileva_outlier_dbscan(train_values, colonne_continue=COLONNE_CONTINUE):
     print("\nGrid Search sugli iperparametri DBSCAN...")
     start_gs = time.time()
     risultati_df, miglior_comb = esegui_grid_search_dbscan(
-        X_scaled, eps_values, MIN_SAMPLES_GRID
+        X_unique,
+        eps_values,
+        MIN_SAMPLES_GRID,
+        sample_weight=sample_weight,
+        inverse_indices=inverse_indices,
+        X_full=X_scaled,
     )
     tempo_gs = time.time() - start_gs
 
@@ -458,7 +573,13 @@ def rileva_outlier_dbscan(train_values, colonne_continue=COLONNE_CONTINUE):
     print(f"\nApplicazione DBSCAN con i parametri ottimali...")
     best_eps = miglior_comb["eps"]
     best_min_samples = miglior_comb["min_samples"]
-    labels = esegui_dbscan(X_scaled, eps=best_eps, min_samples=best_min_samples)
+    labels = esegui_dbscan(
+        X_unique,
+        eps=best_eps,
+        min_samples=best_min_samples,
+        sample_weight=sample_weight,
+        inverse_indices=inverse_indices,
+    )
 
     mask_outlier = pd.Series(labels == -1, index=train_values.index)
 
@@ -529,10 +650,19 @@ def main():
     print("\n3. Standardizzazione dei dati (fondamentale per DBSCAN)...")
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X_num)
-    
-    print("\n4. Stima del range di eps tramite K-distance analysis...")
-    eps_min, eps_max, k_distances_dict = calcola_range_eps(X_scaled, MIN_SAMPLES_GRID)
-    
+
+    X_unique, inverse_indices, sample_weight = comprimi_punti_duplicati(X_scaled)
+    riduzione_pct = 100 * (1 - len(X_unique) / len(X_scaled))
+    print(
+        f"\n4. Compressione duplicati: {len(X_scaled)} righe -> {len(X_unique)} punti unici "
+        f"({riduzione_pct:.1f}% in meno)"
+    )
+
+    print("\n5. Stima del range di eps tramite K-distance analysis...")
+    eps_min, eps_max, k_distances_dict = calcola_range_eps(
+        X_unique, MIN_SAMPLES_GRID, sample_weight=sample_weight
+    )
+
     # Genera la griglia di valori eps (distribuiti uniformemente nel range stimato)
     eps_values = np.linspace(eps_min, eps_max, N_EPS_VALUES)
     print(f"   Valori eps da testare: {[f'{v:.3f}' for v in eps_values]}")
@@ -546,7 +676,12 @@ def main():
     print("\n5. Grid Search sugli iperparametri DBSCAN...")
     start_gs = time.time()
     risultati_df, miglior_comb = esegui_grid_search_dbscan(
-        X_scaled, eps_values, MIN_SAMPLES_GRID
+        X_unique,
+        eps_values,
+        MIN_SAMPLES_GRID,
+        sample_weight=sample_weight,
+        inverse_indices=inverse_indices,
+        X_full=X_scaled,
     )
     tempo_gs = time.time() - start_gs
     
@@ -590,7 +725,13 @@ def main():
     print(f"\n6. Applicazione DBSCAN con i parametri ottimali...")
     best_eps = miglior_comb["eps"]
     best_min_samples = miglior_comb["min_samples"]
-    labels = esegui_dbscan(X_scaled, eps=best_eps, min_samples=best_min_samples)
+    labels = esegui_dbscan(
+        X_unique,
+        eps=best_eps,
+        min_samples=best_min_samples,
+        sample_weight=sample_weight,
+        inverse_indices=inverse_indices,
+    )
     
     print("\n7. Analisi dei risultati...")
     train_values["dbscan_cluster"] = labels
