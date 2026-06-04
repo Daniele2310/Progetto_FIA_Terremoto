@@ -12,8 +12,12 @@ MENU PRINCIPALE:
 """
 
 import io
+import csv
+import json
+import os
 import sys
 from contextlib import redirect_stdout
+from datetime import datetime
 from pathlib import Path
 
 # Riconfigura l'encoding di stdout per supportare caratteri Unicode su Windows
@@ -1294,6 +1298,166 @@ def presenta_risultati(
 
 
 # ============================================================
+# PERFORMANCE CSV
+# ============================================================
+
+def _sanitize_csv_column_name(name: str) -> str:
+    """Normalizza un nome colonna per l'export CSV."""
+    sanitized = str(name).strip().lower()
+    for old, new in (
+        ("__", "_"),
+        (" ", "_"),
+        ("-", "_"),
+        ("/", "_"),
+        ("(", ""),
+        (")", ""),
+        (".", "_"),
+        (":", "_"),
+        (",", "_"),
+    ):
+        sanitized = sanitized.replace(old, new)
+    while "__" in sanitized:
+        sanitized = sanitized.replace("__", "_")
+    return sanitized.strip("_")
+
+
+def _coerce_csv_value(value):
+    """Converte valori arbitrari in un formato stabile per il CSV."""
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple, set)):
+        return " | ".join(str(item) for item in value)
+    if isinstance(value, dict):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+    return value
+
+
+def _build_performance_record(
+    scelta_modello: str,
+    scelta_outlier: str,
+    strategia_imputazione: str | None,
+    tipo_geo_embedding: str,
+    metodo_fs: str,
+    modalita_fs: str | None,
+    risultati_modello: dict | None,
+) -> dict[str, object]:
+    """Costruisce un record leggibile e piatto per performances.csv."""
+    now_local = datetime.now().astimezone()
+
+    best_params = {}
+    selected_features: list[str] = []
+    if risultati_modello:
+        best_params = risultati_modello.get("best_params", {}) or {}
+        selected_features = list(risultati_modello.get("selected_features", []) or [])
+
+    record: dict[str, object] = {
+        "run_date": now_local.date().isoformat(),
+        "run_time": now_local.strftime("%H:%M:%S"),
+        "timezone": now_local.strftime("%z"),
+        "timestamp_iso": now_local.isoformat(timespec="seconds"),
+        "model_code": scelta_modello,
+        "model_name": risultati_modello.get("nome_modello") if risultati_modello else "",
+        "outlier_method": "IQR" if scelta_outlier == "1" else "DBSCAN",
+        "imputation_strategy": strategia_imputazione or "",
+        "geo_embedding": (
+            "Embedding statico" if tipo_geo_embedding == "embedding" else "Rete neurale"
+        ),
+        "feature_selection_method": metodo_fs.replace("_", " ").upper(),
+        "feature_selection_mode": modalita_fs or "",
+        "n_features_used": risultati_modello.get("n_features") if risultati_modello else "",
+        "n_selected_features": len(selected_features),
+        "f1_micro_val": risultati_modello.get("f1_micro") if risultati_modello else "",
+        "accuracy_val": risultati_modello.get("accuracy") if risultati_modello else "",
+        "f1_macro_val": risultati_modello.get("f1_macro") if risultati_modello else "",
+        "balanced_accuracy_val": (
+            risultati_modello.get("balanced_accuracy") if risultati_modello else ""
+        ),
+        "cv_best_score": risultati_modello.get("cv_best_score") if risultati_modello else "",
+        "fit_seconds": risultati_modello.get("fit_seconds") if risultati_modello else "",
+        "tuning_seconds": risultati_modello.get("tuning_seconds") if risultati_modello else "",
+        "selected_features_preview": ", ".join(selected_features[:10]),
+        "selected_features_all": " | ".join(selected_features),
+        "best_params_json": json.dumps(best_params, ensure_ascii=False, sort_keys=True, default=str),
+    }
+
+    max_feature_columns = 10
+    for idx in range(1, max_feature_columns + 1):
+        record[f"feature_{idx:02d}"] = selected_features[idx - 1] if idx <= len(selected_features) else ""
+
+    for param_name, param_value in sorted(best_params.items()):
+        column_name = f"param_{_sanitize_csv_column_name(param_name)}"
+        record[column_name] = _coerce_csv_value(param_value)
+
+    return record
+
+
+def _append_performance_record(out_file: str, record: dict[str, object]) -> None:
+    """Scrive il record nel CSV mantenendo uno schema leggibile e stabile."""
+    existing_rows: list[dict[str, str]] = []
+    existing_columns: list[str] = []
+
+    if os.path.exists(out_file):
+        with open(out_file, "r", newline="", encoding="utf-8") as infile:
+            reader = csv.DictReader(infile)
+            existing_columns = list(reader.fieldnames or [])
+            existing_rows = list(reader)
+
+    preferred_columns = [
+        "run_date",
+        "run_time",
+        "timezone",
+        "timestamp_iso",
+        "model_code",
+        "model_name",
+        "outlier_method",
+        "imputation_strategy",
+        "geo_embedding",
+        "feature_selection_method",
+        "feature_selection_mode",
+        "n_features_used",
+        "n_selected_features",
+        "f1_micro_val",
+        "accuracy_val",
+        "f1_macro_val",
+        "balanced_accuracy_val",
+        "cv_best_score",
+        "fit_seconds",
+        "tuning_seconds",
+        "selected_features_preview",
+        "selected_features_all",
+    ]
+    preferred_columns.extend([f"feature_{idx:02d}" for idx in range(1, 11)])
+
+    dynamic_param_columns = sorted(col for col in record.keys() if col.startswith("param_"))
+    trailing_columns = ["best_params_json"]
+
+    ordered_columns: list[str] = []
+    for column in (
+        preferred_columns
+        + dynamic_param_columns
+        + trailing_columns
+        + existing_columns
+        + list(record.keys())
+    ):
+        if column not in ordered_columns:
+            ordered_columns.append(column)
+
+    normalized_rows: list[dict[str, object]] = []
+    for row in existing_rows:
+        normalized_rows.append({column: row.get(column, "") for column in ordered_columns})
+
+    normalized_record = {
+        column: _coerce_csv_value(record.get(column, "")) for column in ordered_columns
+    }
+    normalized_rows.append(normalized_record)
+
+    with open(out_file, "w", newline="", encoding="utf-8") as outfile:
+        writer = csv.DictWriter(outfile, fieldnames=ordered_columns)
+        writer.writeheader()
+        writer.writerows(normalized_rows)
+
+
+# ============================================================
 # MAIN
 # ============================================================
 
@@ -1650,33 +1814,10 @@ def main():
     if pipeline_completed:
         temp_json = None
         try:
-            import os
-            import json
-            import csv
-            from datetime import datetime
-
             out_dir = os.path.join("outputs", "performances")
             os.makedirs(out_dir, exist_ok=True)
             out_file = os.path.join(out_dir, "performances.csv")
             temp_json = os.path.join(out_dir, "record_tmp.json")
-
-            # Costruisci il record
-            record = {
-                "timestamp": datetime.utcnow().isoformat(),
-                "scelta_modello": scelta_modello,
-                "nome_modello": risultati_modello.get("nome_modello") if risultati_modello else None,
-                "scelta_outlier": ("IQR" if scelta_outlier == "1" else "DBSCAN"),
-                "strategia_imputazione": None,
-                "tipo_geo_embedding": tipo_geo_embedding,
-                "metodo_fs": metodo_fs,
-                "modalita_fs": modalita_fs,
-                "n_features": risultati_modello.get("n_features") if risultati_modello else None,
-                "f1_micro_val": risultati_modello.get("f1_micro") if risultati_modello else None,
-                "accuracy_val": risultati_modello.get("accuracy") if risultati_modello else None,
-                "best_params": json.dumps(risultati_modello.get("best_params", {}), default=str),
-                "selected_features_count": len(risultati_modello.get("selected_features", [])) if risultati_modello else None,
-                "selected_features_preview": ",".join((risultati_modello.get("selected_features", []) or [])[:10]),
-            }
 
             # Prova a ricavare una etichetta leggibile per la strategia di imputazione
             try:
@@ -1698,20 +1839,22 @@ def main():
                             strategia_readable = getattr(strat, "nome_menu")
                             break
 
-            record["strategia_imputazione"] = strategia_readable
+            record = _build_performance_record(
+                scelta_modello=scelta_modello,
+                scelta_outlier=scelta_outlier,
+                strategia_imputazione=strategia_readable,
+                tipo_geo_embedding=tipo_geo_embedding,
+                metodo_fs=metodo_fs,
+                modalita_fs=modalita_fs,
+                risultati_modello=risultati_modello,
+            )
 
             # Scrivi record temporaneo (atomicità: se l'utente interrompe, non eseguiamo l'append finale)
             with open(temp_json, "w", encoding="utf-8") as tf:
                 json.dump(record, tf, ensure_ascii=False)
 
-            # Append al CSV (operazione finale)
-            fieldnames = list(record.keys())
-            write_header = not os.path.exists(out_file)
-            with open(out_file, "a", newline='', encoding='utf-8') as f:
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
-                if write_header:
-                    writer.writeheader()
-                writer.writerow(record)
+            # Append al CSV con schema leggibile e colonne stabili
+            _append_performance_record(out_file, record)
 
             # Rimuovi temporaneo
             try:
