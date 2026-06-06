@@ -351,6 +351,41 @@ def _find_optimal_features_from_ranking(ranking_scores: pd.Series, max_features:
     return max(5, min(optimal_k, max_features))
 
 
+def _is_pca_component_selection(selected_features: list[str]) -> bool:
+    """
+    Riconosce una selezione composta da componenti principali nominate PC1..PCn.
+    """
+    if not selected_features:
+        return False
+
+    return all(
+        isinstance(feature, str) and feature.startswith("PC") and feature[2:].isdigit()
+        for feature in selected_features
+    )
+
+
+def _should_use_pca_feature_space(
+    metodo_fs: str | None,
+    selected_features: list[str],
+    available_columns: pd.Index,
+) -> bool:
+    """
+    Determina se il training finale deve ricostruire uno spazio PCA.
+
+    La FS automatica può restituire componenti PCA (PC1..PCn) che non esistono
+    come colonne fisiche nel dataframe originale. In quel caso serve rifare il
+    transform prima dell'addestramento finale.
+    """
+    if not _is_pca_component_selection(selected_features):
+        return False
+
+    pca_method_names = {"PCA (Elbow)", "PCA (Elbow Method)", "pca"}
+    if metodo_fs in pca_method_names:
+        return True
+
+    return not any(feature in available_columns for feature in selected_features)
+
+
 def valuta_fs_dinamica_per_modello(
     X_train: pd.DataFrame,
     y_train: pd.Series,
@@ -1022,6 +1057,7 @@ def esegui_modello(
     train_values: pd.DataFrame,
     train_labels: pd.Series,
     selected_features: list[str],
+    metodo_fs: str | None = None,
 ) -> dict:
     """
     Fase 4: addestramento del modello scelto con hyperparameter tuning.
@@ -1038,6 +1074,7 @@ def esegui_modello(
         train_values: features di training (con geo-feature già aggiunte)
         train_labels: target di training
         selected_features: lista di feature selezionate
+        metodo_fs: nome del metodo di feature selection usato
 
     Returns:
         dizionario con risultati, metriche, modello e feature usate
@@ -1049,25 +1086,52 @@ def esegui_modello(
     print(f"  Feature selezionate: {len(selected_features)}")
     print(f"  Prime 5 feature: {selected_features[:5]}")
 
-    # Verifica che le feature selezionate esistano nei dati
-    feature_mancanti = [f for f in selected_features if f not in train_values.columns]
-    if feature_mancanti:
-        print(f"  ⚠ Feature non trovate: {feature_mancanti}")
-        selected_features = [f for f in selected_features if f in train_values.columns]
-        print(f"  ✓ Usando {len(selected_features)} feature disponibili")
-
-    # Estrai X (solo feature selezionate) e y
-    X = train_values[selected_features].copy()
     y = train_labels.copy()
 
     # === Split train/validation ===
     print(f"\n  Split stratificato train/validation (80/20)...")
-    X_train, X_val, y_train, y_val = train_test_split(
-        X, y,
-        test_size=0.2,
-        random_state=42,
-        stratify=y
+    usa_spazio_pca = _should_use_pca_feature_space(
+        metodo_fs=metodo_fs,
+        selected_features=selected_features,
+        available_columns=train_values.columns,
     )
+
+    if usa_spazio_pca:
+        print("  Rilevata selezione PCA: ricostruisco le componenti sul train split.")
+
+        X_train_raw, X_val_raw, y_train, y_val = train_test_split(
+            train_values, y,
+            test_size=0.2,
+            random_state=42,
+            stratify=y
+        )
+
+        pca_handler = PCAHandler()
+        pca_handler.fit(X_train_raw, exclude_columns=[])
+
+        n_components = len(selected_features)
+        X_train = pca_handler.transform(X_train_raw).iloc[:, :n_components].copy()
+        X_val = pca_handler.transform(X_val_raw).iloc[:, :n_components].copy()
+        selected_features = X_train.columns.tolist()
+
+        print(f"  ✓ Componenti PCA disponibili: {len(selected_features)}")
+        print(f"  ✓ Prime 5 componenti: {selected_features[:5]}")
+    else:
+        # Verifica che le feature selezionate esistano nei dati
+        feature_mancanti = [f for f in selected_features if f not in train_values.columns]
+        if feature_mancanti:
+            print(f"  ⚠ Feature non trovate: {feature_mancanti}")
+            selected_features = [f for f in selected_features if f in train_values.columns]
+            print(f"  ✓ Usando {len(selected_features)} feature disponibili")
+
+        # Estrai X (solo feature selezionate) e y
+        X = train_values[selected_features].copy()
+        X_train, X_val, y_train, y_val = train_test_split(
+            X, y,
+            test_size=0.2,
+            random_state=42,
+            stratify=y
+        )
 
     print(f"  Train: {X_train.shape[0]} righe")
     print(f"  Validation: {X_val.shape[0]} righe")
@@ -1840,6 +1904,7 @@ def main():
         train_values=train_values,
         train_labels=train_labels["damage_grade"],
         selected_features=selected_features,
+        metodo_fs=metodo_fs,
     )
 
     # ── FASE 5: Risultati ──────────────────────────────────
