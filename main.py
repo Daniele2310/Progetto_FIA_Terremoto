@@ -95,18 +95,26 @@ def applica_geo_embedding(
     smoothing: float = 20.0,
     rare_threshold: int = 10,
     n_splits: int = 5,
+    neural_hidden_dim: int = 16,
+    neural_epochs: int = 30,
+    neural_batch_size: int = 1024,
+    neural_device: str = "cpu",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Applica geo embedding alle feature geografiche usando GeoFeatureEngineer.
+    Applica geo embedding alle feature geografiche.
     
     Args:
         train_values: dataset di training con colonne geo_level_1/2/3 (senza target)
         test_values: dataset di test con colonne geo_level_1/2/3
         y_train: target di training (damage_grade)
-        tipo: tipo di embedding ('aggregate' o 'neural' - attualmente solo aggregate)
+        tipo: tipo di embedding ('embedding'/'aggregate' oppure 'neural')
         smoothing: parametro di smoothing per l'engineer
         rare_threshold: soglia per considerare un'area rara
         n_splits: fold per OOF sul training
+        neural_hidden_dim: dimensione delle feature geo_hidden_* generate dalla rete
+        neural_epochs: numero massimo di epoche per la rete neurale
+        neural_batch_size: dimensione dei batch PyTorch
+        neural_device: device PyTorch ('cpu' o 'cuda')
         
     Returns:
         (train_with_geo, test_with_geo): dataset con geo-feature aggiunte
@@ -114,14 +122,44 @@ def applica_geo_embedding(
     _banner("GEO-LEVEL EMBEDDING — Applicazione")
     
     print(f"  Tipo: {tipo}")
-    print(f"  Smoothing: {smoothing}")
-    print(f"  Rare threshold: {rare_threshold}")
     
     # Verifica che le colonne geo siano presenti
     required_geo_cols = ("geo_level_1_id", "geo_level_2_id", "geo_level_3_id")
     for col in required_geo_cols:
         if col not in train_values.columns:
             raise ValueError(f"{col} non trovato in train_values")
+        if col not in test_values.columns:
+            raise ValueError(f"{col} non trovato in test_values")
+
+    if tipo == "neural":
+        from src.geo_embedding.embedding_extractor import train_geo_hidden_features
+
+        print("\n  Training rete neurale supervisionata per geo-embedding...")
+        print(f"  Hidden dim: {neural_hidden_dim}")
+        print(f"  Epoch max: {neural_epochs}")
+        print(f"  Batch size: {neural_batch_size}")
+        print(f"  Device: {neural_device}")
+
+        train_with_geo, test_with_geo, _ = train_geo_hidden_features(
+            train_geo_df=train_values,
+            train_y=y_train.to_numpy() if hasattr(y_train, "to_numpy") else np.asarray(y_train),
+            test_geo_df=test_values,
+            hidden_dim=neural_hidden_dim,
+            epochs=neural_epochs,
+            batch_size=neural_batch_size,
+            device=neural_device,
+            compute_test=True,
+        )
+
+        n_added = len([col for col in train_with_geo.columns if col.startswith("geo_hidden_")])
+        print(f"  ✓ Features neurali aggiunte: {n_added} colonne geo_hidden_*")
+        return train_with_geo, test_with_geo
+
+    if tipo not in {"embedding", "aggregate", "static"}:
+        raise ValueError(f"Tipo geo embedding non riconosciuto: {tipo}")
+
+    print(f"  Smoothing: {smoothing}")
+    print(f"  Rare threshold: {rare_threshold}")
     
     geo_engineer = GeoFeatureEngineer(
         geo_columns=required_geo_cols,
@@ -705,12 +743,12 @@ def menu_geo_embedding_tipo() -> str:
 
     Ritorna:
         'embedding' -> embedding statico
-        'neural' -> rete neurale con n_hidden layer
+        'neural' -> rete neurale supervisionata per rappresentazioni dense
     """
     _banner("FASE 3A — GEO-LEVEL EMBEDDING (Scelta Tipo)")
     print("  Gestione dei geo_level_1/2/3:")
     print("  1) Embedding statico      — approccio discreto/categorico")
-    print("  2) Rete neurale           — autoencoder per rappresentazioni dense")
+    print("  2) Rete neurale           — embedding supervisionato con PyTorch")
     print()
     try:
         scelta = input("Seleziona tipo embedding [1-2] (default=2): ").strip()
@@ -724,28 +762,30 @@ def menu_geo_embedding_tipo() -> str:
     return tipo
 
 
-def menu_geo_embedding_neural() -> str:
+def menu_geo_embedding_neural() -> int:
     """
-    Fase 3b: scelta del numero di hidden layer per la rete neurale
+    Fase 3b: scelta della dimensione del vettore hidden per la rete neurale
     (solo se tipo == 'neural').
 
-    Ritorna stringa con numero hidden layer ('1', '2', ...).
-    Default = 2.
+    Ritorna la dimensione delle feature geo_hidden_*.
+    Default = 16.
     """
-    _banner("FASE 3B — GEO-LEVEL EMBEDDING (Rete Neurale - Hidden Layer)")
-    print("  Numero di hidden layer per l'autoencoder:")
-    print("  1) 1 hidden layer  — rete leggera")
-    print("  2) 2 hidden layer  — default consigliato")
-    print("  3) 3 hidden layer  — rete più espressiva")
+    _banner("FASE 3B — GEO-LEVEL EMBEDDING (Rete Neurale - Hidden Dim)")
+    print("  Dimensione del vettore hidden estratto dalla rete:")
+    print("  1) 12 dimensioni  — compatto")
+    print("  2) 16 dimensioni  — default consigliato")
+    print("  3) 20 dimensioni  — piu' espressivo")
     print()
     try:
-        scelta = input("Seleziona numero hidden layer [1-3] (default=2): ").strip()
+        scelta = input("Seleziona hidden dim [1-3] (default=2): ").strip()
     except EOFError:
         scelta = ""
     if scelta not in {"1", "2", "3"}:
         scelta = "2"
-    print(f"\n>> Rete neurale con {scelta} hidden layer selezionato.")
-    return scelta
+    hidden_dim_map = {"1": 12, "2": 16, "3": 20}
+    hidden_dim = hidden_dim_map[scelta]
+    print(f"\n>> Rete neurale con hidden dim = {hidden_dim} selezionata.")
+    return hidden_dim
 
 
 # ============================================================
@@ -1713,9 +1753,9 @@ def main():
     # Il menu viene mostrato PRIMA del salvataggio perché le geo-feature
     # verranno aggiunte al dataset
     tipo_geo_embedding = menu_geo_embedding_tipo()
-    n_hidden = None
+    neural_hidden_dim = None
     if tipo_geo_embedding == "neural":
-        n_hidden = int(menu_geo_embedding_neural())
+        neural_hidden_dim = menu_geo_embedding_neural()
 
     _banner("FASE 3 — GEO EMBEDDING (Esecuzione)")
     
@@ -1728,6 +1768,10 @@ def main():
             smoothing=20.0,
             rare_threshold=10,
             n_splits=5,
+            neural_hidden_dim=neural_hidden_dim or 16,
+            neural_epochs=30,
+            neural_batch_size=1024,
+            neural_device="cpu",
         )
         print("  ✓ Geo-feature applicate con successo")
     except Exception as e:
@@ -1901,7 +1945,7 @@ def main():
     else:
         print("  ✅ Nessuna colonna numerica da imputare")
     
-    print(f"  ✅ Geo embedding:           {'Embedding statico' if tipo_geo_embedding == 'embedding' else f'Rete neurale ({n_hidden} layer)'}")
+    print(f"  ✅ Geo embedding:           {'Embedding statico' if tipo_geo_embedding == 'embedding' else f'Rete neurale (hidden dim={neural_hidden_dim or 16})'}")
     print(f"  ✅ Feature selection:       {metodo_fs.upper()}")
     print(f"     Feature usate:           {len(selected_features)}")
     
