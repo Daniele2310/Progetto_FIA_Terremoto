@@ -285,14 +285,9 @@ Progetto_FIA_Terremoto/
 │   │   │   └── max_min_subset_selection.py
 │   │   └── embedded/
 │   │       └── lasso_feature_selection.py
-│   │
-│   └── ensemble/
-│       └── multi_expert_system.py
 │
 ├── experiments/
-│   ├── evaluate_feature_selection.py
-│   ├── evaluate_multi_expert.py
-│   └── tune_multi_expert_hyperparameters.py
+│   └── evaluate_feature_selection.py
 │
 ├── tests/
 │   ├── test_best_first.py
@@ -356,12 +351,6 @@ python experiments/evaluate_feature_selection.py
 
 # Benchmark completo (KNN + RF + DT)
 python experiments/evaluate_feature_selection.py --full-tuning
-
-# Valutazione sistema multi-esperto
-python experiments/evaluate_multi_expert.py
-
-# Hyperparameter tuning
-python experiments/tune_multi_expert_hyperparameters.py
 
 # Test monotonia (prerequisito per branch-and-bound)
 python tests/test_monotonia_fast.py --num-trials 20 --max-rows 5000
