@@ -6,8 +6,7 @@ MENU PRINCIPALE:
   FASE 2  - Imputazione           : strategia sui NaN generati dagli outlier
                                     [nota: monum_flag aggiunta DOPO outlier+imputazione]
   FASE 3  - Geo-Level Embedding   : rete neurale per feature geografiche
-  FASE 4  - Scelta modello        : KNN / Albero Decisionale / SVM
-                                    Multi-Esperto (Random Forest + KNN + Decision Tree)
+  FASE 4  - Scelta modello        : KNN / Albero Decisionale / SVM / Random Forest
   FASE 5  - Presentazione risultati (F1-Micro)
 """
 
@@ -47,9 +46,6 @@ from src.Modelli.knn import train_knn
 from src.Modelli.randomforest import train_randomforest
 from src.Modelli.decisiontree import train_decisiontree
 from src.Modelli.svm import train_svm
-
-# === Ensemble ===
-from src.ensemble.multi_expert_system import MultiExpertSystem, ExpertSpec
 
 # === Feature Selection ===
 from src.feature_selection.Hyperparameter_Tuning import (
@@ -415,7 +411,7 @@ def valuta_fs_dinamica_per_modello(
     Args:
         X_train: feature di training completo (con geo-embedding)
         y_train: target di training completo
-        scelta_modello: '1' (KNN), '2' (DT), '3' (SVM), '4' (Multi-Esperto → usa KNN come proxy)
+        scelta_modello: '1' (KNN), '2' (DT), '3' (SVM), '4' (RF)
         modalita: 'fast', 'balanced', 'thorough' (determina sample_size e CV fold)
         sample_size: numero di righe da usare (se None, viene calcolato dalla modalità)
         max_features: numero massimo di feature da selezionare
@@ -672,9 +668,6 @@ def valuta_fs_dinamica_per_modello(
             elif scelta_modello == "3":
                 modello_info = train_svm(X_train_fs, y_train_fs, X_val_fs, y_val_fs, verbose=False)
             elif scelta_modello == "4":
-                # Multi-Esperto: usa Random Forest come proxy durante la FS (il sistema
-                # completo sarebbe troppo lento su un campione iterato per ogni metodo FS)
-                print(f"    (Multi-Esperto: uso Random Forest come proxy per la valutazione FS)")
                 modello_info = train_randomforest(X_train_fs, y_train_fs, X_val_fs, y_val_fs, verbose=False)
             else:
                 print(f"    ⚠️  Modello {scelta_modello} non supportato")
@@ -836,7 +829,6 @@ def menu_scelta_modello() -> str:
         2 -> Albero Decisionale
         3 -> SVM (Support Vector Machine)
         4 -> Random Forest
-
     Ritorna stringa '1'-'4'.
     """
     _banner("FASE 4 — SCELTA MODELLO")
@@ -928,130 +920,6 @@ def _stub_da_implementare(nome_sezione: str) -> None:
     print("  Verrà integrata nelle prossime iterazioni dello sviluppo.")
 
 
-def train_multi_expert_system(
-    X_train: pd.DataFrame,
-    y_train: pd.Series,
-    X_val: pd.DataFrame,
-    y_val: pd.Series,
-    verbose: bool = True,
-) -> dict:
-    """
-    Addestra un sistema multi-esperto con Random Forest, KNN e Decision Tree.
-
-    Il Random Forest è integrato in questa sezione come esperto del sistema
-    combinato. Gli esperti vengono addestrati singolarmente, poi aggregati
-    con la regola ``weighted_mean`` del decision profile.
-
-    Args:
-        X_train: feature di training (DataFrame)
-        y_train: target di training (Series)
-        X_val: feature di validation (DataFrame)
-        y_val: target di validation (Series)
-        verbose: stampe a console
-
-    Returns:
-        dict con chiavi:
-        - "model": modello MultiExpertSystem addestrato
-        - "best_params": dict con parametri degli esperti
-        - "metrics": metriche di valutazione
-        - "n_features": numero di feature utilizzate
-    """
-    if verbose:
-        print(f"\n{'='*80}")
-        print("MODELLO MULTI-ESPERTO (Random Forest + KNN + Decision Tree)")
-        print(f"{'='*80}\n")
-
-    # Addestra gli esperti singolarmente per estrarre i modelli migliori
-    print("  Addestramento esperti singoli...")
-
-    try:
-        rf_result = train_randomforest(X_train, y_train, X_val, y_val, verbose=True)
-        rf_f1 = rf_result.get('metrics', {}).get('f1_micro', 0)
-        print(f"    ✓ Random Forest addestrato (F1: {rf_f1:.4f})")
-    except Exception as e:
-        print(f"    ❌ Errore RF: {e}")
-        rf_result = None
-
-    try:
-        knn_result = train_knn(X_train, y_train, X_val, y_val, verbose=False)
-        knn_f1 = knn_result.get('metrics', {}).get('f1_micro', 0)
-        print(f"    ✓ KNN addestrato (F1: {knn_f1:.4f})")
-    except Exception as e:
-        print(f"    ❌ Errore KNN: {e}")
-        knn_result = None
-
-    try:
-        dt_result = train_decisiontree(X_train, y_train, X_val, y_val, verbose=False)
-        dt_f1 = dt_result.get('metrics', {}).get('f1_micro', 0)
-        print(f"    ✓ Decision Tree addestrato (F1: {dt_f1:.4f})")
-    except Exception as e:
-        print(f"    ❌ Errore DT: {e}")
-        dt_result = None
-
-    # Crea il sistema multi-esperto
-    if not any([rf_result, knn_result, dt_result]):
-        raise ValueError("Nessun esperto è stato addestrato con successo.")
-
-    experts = []
-    best_params = {}
-
-    if rf_result:
-        experts.append(ExpertSpec(
-            name="Random Forest",
-            estimator=rf_result["model"],
-            weight=1.0
-        ))
-        best_params["rf"] = rf_result.get("best_params", {})
-
-    if knn_result:
-        experts.append(ExpertSpec(
-            name="KNN",
-            estimator=knn_result["model"],
-            weight=1.0
-        ))
-        best_params["knn"] = knn_result.get("best_params", {})
-
-    if dt_result:
-        experts.append(ExpertSpec(
-            name="Decision Tree",
-            estimator=dt_result["model"],
-            weight=1.0
-        ))
-        best_params["dt"] = dt_result.get("best_params", {})
-
-    print(f"\n  Creazione sistema multi-esperto ({len(experts)} esperti)...")
-    multi_expert_system = MultiExpertSystem(experts, aggregation="weighted_mean")
-    multi_expert_system.fit(X_train, y_train)
-    print(f"  ✓ Sistema multi-esperto creato e addestrato")
-
-    # Valutazione sul validation set
-    y_pred = multi_expert_system.predict(X_val)
-    f1_micro_val = f1_score(y_val, y_pred, average="micro", zero_division=0)
-    accuracy_val = accuracy_score(y_val, y_pred)
-
-    if verbose:
-        print(f"\n  📊 Metriche su VALIDATION set:")
-        print(f"    - F1 Micro:              {f1_micro_val:.4f}")
-        print(f"    - Accuracy:              {accuracy_val:.4f}")
-
-        # Mostra contributi esperti
-        diversity_df = multi_expert_system.diversity_report(X_val, y_val)
-        if not diversity_df.empty:
-            print(f"\n  🤝 Diversità tra esperti:")
-            print(f"    - Disagreement (media):  {diversity_df['disagreement'].mean():.4f}")
-            print(f"    - Double Fault (media):  {diversity_df['double_fault'].mean():.4f}")
-
-    return {
-        "model": multi_expert_system,
-        "best_params": best_params,
-        "metrics": {
-            "f1_micro": f1_micro_val,
-            "accuracy": accuracy_val,
-        },
-        "n_features": X_train.shape[1],
-    }
-
-
 def esegui_modello(
     scelta_modello: str,
     train_values: pd.DataFrame,
@@ -1070,7 +938,7 @@ def esegui_modello(
     5. Ritorna metriche e modello
 
     Args:
-        scelta_modello: '1' (KNN), '2' (DT), '3' (SVM), '4' (Multi-Esperto)
+        scelta_modello: '1' (KNN), '2' (DT), '3' (SVM), '4' (RF)
         train_values: features di training (con geo-feature già aggiunte)
         train_labels: target di training
         selected_features: lista di feature selezionate
@@ -1252,7 +1120,7 @@ def esegui_modello(
             try:
                 estimatore_cv = clone(modello_addestrato)
             except Exception:
-                # Se clone non riesce (es. MultiExpertSystem), salta la CV
+                # Se clone non riesce, salta la CV
                 raise RuntimeError("clone() non supportato per questo modello.")
 
             cv_strategy = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
@@ -1571,7 +1439,7 @@ def main():
     print("    1) Outlier Detection  (IQR / DBSCAN)")
     print("    2) Imputazione        (varie strategie)")
     print("    3) Geo Embedding      (rete neurale)")
-    print("    4) Scelta Modello     (KNN / DT / RF / Multi-Esperto)")
+    print("    4) Scelta Modello     (KNN / DT / SVM / RF)")
     print("    5) Risultati          (F1-Micro)")
 
     # Track whether pipeline reached completion (Fase 5)
