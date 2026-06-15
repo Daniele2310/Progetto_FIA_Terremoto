@@ -132,18 +132,7 @@ Gestione NaN con strategie di imputazione selezionabili via menu interattivo:
 2. **Univariata - Mediana**
 3. **Multivariata - Regressione Lineare** (mediana per gruppi geografici gerarchici)
 4. **KNN Predictor**
-5. **Valutazione Automatica**: confronto rapido con KNN veloce e selezione del metodo migliore
 
-**Validazione delle strategie** (confronto su holdout 80/20):
-
-| Strategia | Accuracy | F1 Macro | Balanced Accuracy |
-|-----------|----------|----------|-------------------|
-| Univariata media | 0.5785 | — | — |
-| KNN predictor | 0.5785 | — | — |
-| Univariata mediana | 0.5783 | — | — |
-| Multivariata regressione lineare | 0.5783 | — | — |
-
-La strategia migliore viene selezionata automaticamente (opzione 5).
 
 #### 3. Pattern Strategy per Imputazione (`src/preprocessing/imputation_strategies.py`)
 Implementazione del **Design Pattern Strategy** per isolare la logica di selezione dell'algoritmo dal flusso principale:
@@ -193,45 +182,38 @@ Sono stati implementati **7 metodi di feature selection** con approcci diversi, 
 - **File**: `src/feature_selection/subset_selection/sfs.py`
 - **Approccio**: Forward — parte da 0 feature, aggiunge iterativamente la migliore
 - **Estimator**: LogisticRegression o KNeighborsClassifier
-- **Risultati**: 7 feature selezionate (age, area_percentage, has_superstructure_stone_flag, has_superstructure_rc_engineered, foundation_type_h, foundation_type_i, roof_type_x)
 - **Stop**: quando lo score smette di crescere
 
 #### Sequential Backward Selection (SBS)
 - **File**: `src/feature_selection/subset_selection/sbs_subset_selection.py`
 - **Approccio**: Backward — parte da tutte le feature, rimuove iterativamente la peggiore
-- **Risultati**: 68 → 28 feature; accuracy 0.533 → 0.622 (+8.8%)
-- **Costo**: O(p²), 1.969 modelli valutati in 29.26s
+
 
 #### Stepwise Bidirectional Selection
 - **File**: `src/feature_selection/subset_selection/bidirectional_subset_selection.py`
 - **Approccio**: Alternanza di step forward e backward per ciclo
-- **Risultati**: 68 → 9 feature; accuracy 0.533 → 0.655 (+12.2%)
 - **Stop**: quando un intero ciclo non produce miglioramenti
 
 #### Best First Search
 - **File**: `src/feature_selection/subset_selection/best_first.py`
 - **Approccio**: Priority queue con espansione greedy, patience k=5
-- **Valutazione**: Decision Tree con 5-fold CV
-- **Risultati**: **82.6% di riduzione** (69 → 12 feature), accuracy **0.6913**
-- **Nota**: riduzione significativa con miglioramento delle prestazioni rispetto alla baseline del 57%
 
 #### Max-Min Subset Selection
 - **File**: `src/feature_selection/subset_selection/max_min_subset_selection.py`
 - **Formula**: `score(f) = |corr(f, target)| - max|corr(f, selected_set)|`
-- **Risultati**: 6 feature selezionate (stop su score negativo)
+
 
 #### Embedded Lasso Regression
 - **File**: `src/feature_selection/embedded/lasso_feature_selection.py`
 - **Approccio**: Regolarizzazione L1 durante l'addestramento
 - **Alpha**: selezionabile (LassoCV automatico o valore fisso)
-- **Valore consigliato**: `alpha=0.002` → 49 feature, prestazioni stabili
-- **Feature stabili**: presenti in tutte le prove (count_families, foundation_type_r, ground_floor_type_v, has_superstructure_mud_mortar_stone, ...)
+
 
 #### PCA
 - **File**: `src/feature_selection/feature_ranking/pca.py`
 - **Approccio**: Riduzione dimensionale non supervisionata
 - **Feature escluse dal fit**: `building_id`, `geo_level_*_id`, `damage_grade`
-- **Output**: scree plot + tabella varianza per scelta manuale del gomito
+
 
 ### Analisi Monotonia e Branch-and-Bound
 - **File**: `tests/test_monotonia_fast.py`
@@ -239,81 +221,14 @@ Sono stati implementati **7 metodi di feature selection** con approcci diversi, 
 - **Implicazione**: Branch-and-Bound **non applicabile** su questo dataset
 - **Cause**: ridondanza tra feature, interazioni non lineari, overfitting locale di KNN
 
-### Benchmark Rigoroso di Feature Selection
-Benchmark finale con campionamento bilanciato (~30.000 campioni), GridSearchCV con K∈[3,5,9,15,21], K ottimale trovato = 21.
-
-**Classifica finale (Top 3)**:
-
-| Posizione | Metodo | F1-Micro | Feature Selezionate |
-|-----------|--------|----------|---------------------|
-| 1 | Sequential Backward Selection (SBS) | 0.5450 | 30 |
-| 2 | Best First Search | 0.5417 | 17 |
-| 3 | Relief Ranking | 0.5385 | 15 (taglio prefissato) |
-
-I tre metodi confermati per l'integrazione nella pipeline principale sono **SBS**, **Best First Search** e **Relief**.
 
 ---
 
-## Sistema Multi-Esperto ed Ensemble
-
-### Architettura (`src/ensemble/multi_expert_system.py`)
-Sistema multi-esperto tradizionale basato su **decision profile** con aggregazione configurabile: `mean`, `weighted_mean`, `median`, `product`, `majority_vote`.
-
-### Esperti Valutati
-- **KNN**: su feature set da Lasso, Relief e SBS
-- **Decision Tree**: su feature set Max-Min e Best First
-- **Random Forest**: su full features e Information Gain top-25
-- **Logistic Regression**: su Lasso top-25
-- **AdaBoost** e **HistGradientBoosting**: su full features e Lasso top-25
-
-### Hyperparameter Tuning (`src/feature_selection/Hyperparameter_Tuning.py`)
-GridSearchCV con 3-fold CV su 2.000 campioni per classe. Migliori parametri trovati:
-
-| Modello | Parametri Ottimali |
-|---------|-------------------|
-| Logistic Regression (lasso_top25) | C=0.3, class_weight=balanced |
-| Random Forest (full) | n_estimators=200, max_depth=16, max_features=log2, min_samples_leaf=2 |
-| HistGradientBoosting (full) | learning_rate=0.06, max_iter=160, max_leaf_nodes=15 |
-| HistGradientBoosting (lasso_top25) | learning_rate=0.04, max_iter=160, max_leaf_nodes=15, l2=0.1 |
-| AdaBoost (lasso_top25) | n_estimators=180, learning_rate=0.3, max_depth=3 |
-
-### Risultati Finali MES
-
-| Configurazione | F1-Micro | F1-Macro | Accuracy |
-|----------------|----------|----------|----------|
-| mes_top4_product | **0.5803** | 0.5800 | 0.5803 |
-| mes_diverse4_product | 0.5803 | 0.5800 | 0.5803 |
-| mes_top4_mean | 0.5800 | 0.5793 | 0.5800 |
-| logistic_lasso_top25 (singolo) | 0.5793 | 0.5785 | 0.5793 |
-
-**Miglior modello**: `mes_top4_product` — sistema multi-esperto con i 4 migliori esperti (logistic_lasso_top25, hist_gradient_boosting_full, hist_gradient_boosting_lasso_top25, random_forest_full) e regola `product` sul decision profile.
-
-**Classification report del miglior MES**:
-
-| Classe | Precision | Recall | F1 |
-|--------|-----------|--------|----|
-| 1 | 0.765 | 0.664 | 0.711 |
-| 2 | 0.463 | 0.411 | 0.436 |
-| 3 | 0.535 | 0.666 | 0.593 |
-
-La classe 2 rimane la più difficile, spesso confusa con la classe 3.
-
----
 
 ## Analisi delle Feature Geografiche
 
 Le variabili `geo_level_1_id`, `geo_level_2_id` e `geo_level_3_id` risultano le più informative in tutti i ranking (IG, Relief). Sono state identificate diverse strategie per sfruttarle meglio:
 
-**Priorità alta**:
-- Target/CatBoost Encoding out-of-fold dei geo_level_id
-- Feature aggregate gerarchiche con smoothing (count edifici per area, probabilità danno per zona, entropia locale, gestione aree rare)
-
-**Priorità media**:
-- Collasso delle aree rare al livello geografico superiore + flag `rare_geo`
-- Embedding denso dei tre livelli (autoencoder)
-
-**Priorità bassa**:
-- Geo3 Rollup embedding (più sperimentale, costo/beneficio peggiore)
 
 ---
 
@@ -408,8 +323,6 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Il menu interattivo guida attraverso: imputazione outlier, scelta strategia per `age`, OHE, standardizzazione e PCA opzionale.
-
 ### Feature Selection Standalone
 
 ```bash
@@ -453,32 +366,6 @@ python experiments/tune_multi_expert_hyperparameters.py
 # Test monotonia (prerequisito per branch-and-bound)
 python tests/test_monotonia_fast.py --num-trials 20 --max-rows 5000
 ```
-
----
-
-## Riepilogo Risultati
-
-### Baseline (68 feature, KNN k=5)
-- Accuracy: 0.592 | F1 Macro: 0.463 | Balanced Accuracy: 0.455
-
-### Feature Selection (confronto su ~30.000 campioni bilanciati, K ottimale=21)
-
-| Metodo | F1-Micro | Feature |
-|--------|----------|---------|
-| SBS | 0.545 | 30 |
-| Best First Search | 0.542 | 17 |
-| Relief | 0.539 | 15 |
-
-### Sistema Multi-Esperto (5.000 campioni per classe, 15.000 totali)
-
-| Configurazione | F1-Micro |
-|----------------|----------|
-| mes_top4_product | **0.580** |
-| HistGradientBoosting (full, tuned) | 0.586 *(singolo esperto)* |
-| Random Forest (full, tuned) | 0.575 *(singolo esperto)* |
-
-### Feature Stabili in Tutte le Selezioni
-Strutturali e materiali: `count_floors_pre_eq`, `count_families`, `foundation_type_r/i/w`, `ground_floor_type_v`, `has_superstructure_mud_mortar_stone`, `has_superstructure_cement_mortar_brick`, `has_superstructure_rc_engineered`, `roof_type_q/x`, `position_s/t`
 
 ---
 
