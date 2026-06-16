@@ -252,12 +252,18 @@ Sono stati implementati **7 metodi di feature selection** con approcci diversi, 
 - **Feature escluse dal fit**: `building_id`, `geo_level_*_id`, `damage_grade`
 
 
-### Analisi Monotonia e Branch-and-Bound
-- **File**: `tests/test_monotonia_fast.py`
-- **Risultato**: Ipotesi di monotonia **NON RISPETTATA** (40% di violazioni su 20 trial)
-- **Implicazione**: Branch-and-Bound **non applicabile** su questo dataset
-- **Cause**: ridondanza tra feature, interazioni non lineari, overfitting locale di KNN
+### Benchmark Rigoroso di Feature Selection
+Benchmark finale con campionamento bilanciato (~30.000 campioni), GridSearchCV con K∈[3,5,9,15,21], K ottimale trovato = 21.
 
+**Classifica finale (Top 3)**:
+
+| Posizione | Metodo | F1-Micro | Feature Selezionate |
+|-----------|--------|----------|---------------------|
+| 1 | Sequential Backward Selection (SBS) | 0.5450 | 30 |
+| 2 | Best First Search | 0.5417 | 17 |
+| 3 | Relief Ranking | 0.5385 | 15 (taglio prefissato) |
+
+I tre metodi confermati per l'integrazione nella pipeline principale sono **SBS**, **Best First Search** e **Relief**.
 
 ---
 
@@ -422,9 +428,6 @@ Progetto_FIA_Terremoto/
 ├── experiments/
 │   └── evaluate_feature_selection.py
 │
-├── tests/
-│   └── test_monotonia_fast.py
-│
 └── requirements.txt
 ```
 
@@ -483,8 +486,11 @@ python experiments/evaluate_feature_selection.py
 # Benchmark completo (KNN + RF + DT)
 python experiments/evaluate_feature_selection.py --full-tuning
 
-# Test monotonia (prerequisito per branch-and-bound)
-python tests/test_monotonia_fast.py --num-trials 20 --max-rows 5000
+# Valutazione sistema multi-esperto
+python experiments/evaluate_multi_expert.py
+
+# Hyperparameter tuning
+python experiments/tune_multi_expert_hyperparameters.py
 ```
 
 ---
@@ -498,8 +504,6 @@ python tests/test_monotonia_fast.py --num-trials 20 --max-rows 5000
 **Esclusione Geographic IDs da PCA** — i geo_level_id alteravano la scala della varianza rendendo lo scree plot illeggibile; vengono riallegati dopo la trasformazione.
 
 **k=3.0 per IQR** — validato sperimentalmente come ottimale tra k∈{1.5, 2.0, 2.5, 3.0, 4.0}; rimuove solo gli outlier genuini senza perdere dati validi.
-
-**Branch-and-bound escluso** — ipotesi di monotonia violata nel 40% dei trial; i metodi euristici (SFS, SBS, Bidirectional, Best First) rimangono le scelte corrette.
 
 ---
 
