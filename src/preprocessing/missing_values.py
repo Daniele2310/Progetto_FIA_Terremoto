@@ -62,22 +62,6 @@ class MissingValuesHandler:
         
         return self.report
 
-    def sostituisci_range_con_nan(self, df, colonna='age', min_val=250, max_val=995):
-        """
-        Sostituisce con NaN i valori compresi nel range [min_val, max_val] su una colonna.
-        Ritorna dataframe aggiornato, maschera valori sostituiti e numero sostituzioni.
-        """
-        if colonna not in df.columns:
-            raise ValueError(f"La colonna '{colonna}' non è presente nel dataframe.")
-
-        df_out = df.copy()
-        mask_range = df_out[colonna].between(min_val, max_val, inclusive='both')
-        n_sostituiti = int(mask_range.sum())
-
-        df_out.loc[mask_range, colonna] = np.nan
-
-        return df_out, mask_range, n_sostituiti
-
     def imputa_univariata_media(self, train_df, test_df, colonna='age'):
         """
         Imputazione univariata con media calcolata sul train.
