@@ -485,12 +485,6 @@ python experiments/evaluate_feature_selection.py
 
 # Benchmark completo (KNN + RF + DT)
 python experiments/evaluate_feature_selection.py --full-tuning
-
-# Valutazione sistema multi-esperto
-python experiments/evaluate_multi_expert.py
-
-# Hyperparameter tuning
-python experiments/tune_multi_expert_hyperparameters.py
 ```
 
 ---
