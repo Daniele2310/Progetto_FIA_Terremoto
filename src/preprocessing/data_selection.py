@@ -1,5 +1,4 @@
 import pandas as pd
-from typing import Optional
 
 def get_balanced_sample(df: pd.DataFrame, target_col: str, max_per_class: int, random_state: int = 42) -> pd.DataFrame:
     """

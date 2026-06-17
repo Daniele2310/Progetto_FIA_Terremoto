@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
 
-import numpy as np
 import pandas as pd
 
 

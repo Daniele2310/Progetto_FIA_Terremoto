@@ -35,7 +35,6 @@ from src.preprocessing.data_cleaning import DataQualityHandler, COLONNE_CONTINUE
 from src.preprocessing.validation import DataValidator
 from src.preprocessing.imputation_strategies import (
     STRATEGIE_IMPUTAZIONE,
-    CODICE_STRATEGIA_DA_NOME_REPORT,
     applica_strategia_imputazione_colonna,
 )
 from src.preprocessing.outlier_detection.DBSCAN import rileva_outlier_dbscan
@@ -50,7 +49,6 @@ from src.Modelli.svm import train_svm
 # === Feature Selection ===
 from src.feature_selection.Hyperparameter_Tuning import (
     esegui_grid_search,
-    get_all_configs,
     get_rf_config,
     get_knn_config,
     get_dt_config,
@@ -898,26 +896,6 @@ def salva_dataset_preprocessati(train_values, train_labels, test_values, output_
     print(f"  - {file_train.name}")
     print(f"  - {file_test.name}")
     print(f"  - {file_train_con_label.name}")
-
-
-# ============================================================
-# STUB MODELLI  [fasi 4-5, parte DA IMPLEMENTARE]
-# ============================================================
-
-def _stub_da_implementare(nome_sezione: str) -> None:
-    _banner(f"[DA IMPLEMENTARE] — {nome_sezione}")
-    print(f"  La sezione '{nome_sezione}' non è ancora implementata.")
-    print("  Verrà integrata nelle prossime iterazioni dello sviluppo.")
-
-
-# ============================================================
-# STUB MODELLI  [fasi 4-5, parte DA IMPLEMENTARE]
-# ============================================================
-
-def _stub_da_implementare(nome_sezione: str) -> None:
-    _banner(f"[DA IMPLEMENTARE] — {nome_sezione}")
-    print(f"  La sezione '{nome_sezione}' non è ancora implementata.")
-    print("  Verrà integrata nelle prossime iterazioni dello sviluppo.")
 
 
 def esegui_modello(

@@ -6,7 +6,6 @@ Verifica:
 """
 
 import pandas as pd
-import numpy as np
 
 
 # Valori ammissibili per le feature categoriche
