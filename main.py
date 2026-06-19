@@ -933,6 +933,7 @@ def esegui_modello(
     print(f"  Prime 5 feature: {selected_features[:5]}")
 
     y = train_labels.copy()
+    pca_handler = None
 
     # === Split train/validation ===
     print(f"\n  Split stratificato train/validation (80/20)...")
@@ -1025,6 +1026,7 @@ def esegui_modello(
         "best_params": modello_info.get("best_params", {}),
         "n_features": len(selected_features),
         "selected_features": selected_features,
+        "pca_handler": pca_handler,
         "X_train": X_train,
         "y_train": y_train,
         "X_val": X_val,
@@ -1407,6 +1409,123 @@ def _append_performance_record(out_file: str, record: dict[str, object]) -> None
         writer.writerows(normalized_rows)
 
 
+def salva_submission_finale(
+    train_values: pd.DataFrame,
+    train_labels: pd.DataFrame | pd.Series,
+    test_values: pd.DataFrame,
+    risultati_modello: dict | None,
+    submission_format_path: str = "Data/raw/submission_format.csv",
+    output_file: str = "outputs/submissions/submission.csv",
+) -> Path | None:
+    """
+    Genera il file di submission nel formato richiesto:
+    building_id, damage_grade.
+
+    Il modello scelto viene riaddestrato su tutto il training preprocessato
+    usando le feature selezionate, poi applicato al test set.
+    """
+    if risultati_modello is None or risultati_modello.get("modello") is None:
+        print("  Submission non salvata: modello finale non disponibile.")
+        return None
+
+    if "building_id" not in test_values.columns:
+        print("  Submission non salvata: 'building_id' assente nel test set.")
+        return None
+
+    selected_features = list(risultati_modello.get("selected_features", []) or [])
+    if not selected_features:
+        print("   Submission non salvata: nessuna feature selezionata disponibile.")
+        return None
+
+    y_full = (
+        train_labels["damage_grade"].copy()
+        if isinstance(train_labels, pd.DataFrame)
+        else train_labels.copy()
+    )
+
+    usa_spazio_pca = risultati_modello.get("pca_handler") is not None or _is_pca_component_selection(
+        selected_features
+    )
+
+    try:
+        from sklearn.base import clone
+
+        modello_finale = clone(risultati_modello["modello"])
+
+        if usa_spazio_pca:
+            pca_handler = PCAHandler()
+            pca_handler.fit(train_values, exclude_columns=[])
+            n_components = len(selected_features)
+            X_full = pca_handler.transform(train_values).iloc[:, :n_components].copy()
+            X_test = pca_handler.transform(test_values).iloc[:, :n_components].copy()
+            X_full.columns = selected_features
+            X_test.columns = selected_features
+        else:
+            feature_mancanti_train = [f for f in selected_features if f not in train_values.columns]
+            feature_mancanti_test = [f for f in selected_features if f not in test_values.columns]
+            if feature_mancanti_train or feature_mancanti_test:
+                print("  Submission non salvata: feature mancanti per la predizione.")
+                if feature_mancanti_train:
+                    print(f"     Train: {feature_mancanti_train}")
+                if feature_mancanti_test:
+                    print(f"     Test:  {feature_mancanti_test}")
+                return None
+
+            X_full = train_values[selected_features].copy()
+            X_test = test_values[selected_features].copy()
+
+        modello_finale.fit(X_full, y_full)
+        predizioni = modello_finale.predict(X_test)
+
+        predizioni_df = pd.DataFrame(
+            {
+                "building_id": test_values["building_id"].values,
+                "damage_grade": predizioni.astype(int),
+            }
+        )
+
+        if os.path.exists(submission_format_path):
+            submission_template = pd.read_csv(submission_format_path)
+            colonne_attese = ["building_id", "damage_grade"]
+            if list(submission_template.columns) != colonne_attese:
+                print(
+                    "   Template submission con colonne inattese: "
+                    f"{list(submission_template.columns)}"
+                )
+                return None
+
+            submission = submission_template[["building_id"]].merge(
+                predizioni_df,
+                on="building_id",
+                how="left",
+            )
+            if submission["damage_grade"].isna().any():
+                n_mancanti = int(submission["damage_grade"].isna().sum())
+                print(
+                    "  Submission non salvata: "
+                    f"{n_mancanti} building_id del template non hanno predizione."
+                )
+                return None
+            submission["damage_grade"] = submission["damage_grade"].astype(int)
+        else:
+            print(f"  Template non trovato ({submission_format_path}); uso ordine del test set.")
+            submission = predizioni_df[["building_id", "damage_grade"]]
+
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        submission.to_csv(output_path, index=False)
+
+        _banner("SALVATAGGIO SUBMISSION")
+        print(f"File salvato in: {output_path.resolve()}")
+        print(f"  Righe: {len(submission)}")
+        print(f"  Colonne: {list(submission.columns)}")
+        return output_path
+
+    except Exception as e:
+        print(f"  Impossibile salvare la submission: {e}")
+        return None
+
+
 # ============================================================
 # MAIN
 # ============================================================
@@ -1762,6 +1881,7 @@ def main():
         metodo_fs=metodo_fs,
         risultati_modello=risultati_modello,
     )
+
     # Segna che abbiamo raggiunto la Fase 5 (pipeline completata)
     pipeline_completed = True
 
@@ -1830,6 +1950,13 @@ def main():
         except Exception as e:
             print(f"  ⚠️ Impossibile salvare le performance: {e}")
 
+    submission_path = salva_submission_finale(
+        train_values=train_values,
+        train_labels=train_labels,
+        test_values=test_values,
+        risultati_modello=risultati_modello,
+    )
+
     # ── RIEPILOGO FINALE ───────────────────────────────────
     _banner("PIPELINE COMPLETATA")
     print(f"  ✅ Outlier detection:       {'IQR' if scelta_outlier == '1' else 'DBSCAN'}")
@@ -1867,6 +1994,8 @@ def main():
         "4": "Random Forest",
     }
     print(f"  ✅ Modello selezionato:     {nomi_modelli.get(scelta_modello, '?')}")
+    if submission_path is not None:
+        print(f"  ✅ Submission salvata:      {submission_path}")
 
     return (
         train_values,

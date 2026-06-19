@@ -48,7 +48,6 @@ Thumbs.db
 !Data/README.md
 # Includi i file CSV della challenge
 !Data/raw/*.csv
-!Data/preprocessed/*.csv
 DataPreprocessed/
 outputs/
 
