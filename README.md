@@ -252,19 +252,6 @@ Sono stati implementati **7 metodi di feature selection** con approcci diversi, 
 - **Feature escluse dal fit**: `building_id`, `geo_level_*_id`, `damage_grade`
 
 
-### Benchmark Rigoroso di Feature Selection
-Benchmark finale con campionamento bilanciato (~30.000 campioni), GridSearchCV con K∈[3,5,9,15,21], K ottimale trovato = 21.
-
-**Classifica finale (Top 3)**:
-
-| Posizione | Metodo | F1-Micro | Feature Selezionate |
-|-----------|--------|----------|---------------------|
-| 1 | Sequential Backward Selection (SBS) | 0.5450 | 30 |
-| 2 | Best First Search | 0.5417 | 17 |
-| 3 | Relief Ranking | 0.5385 | 15 (taglio prefissato) |
-
-I tre metodi confermati per l'integrazione nella pipeline principale sono **SBS**, **Best First Search** e **Relief**.
-
 ---
 
 
@@ -509,4 +496,15 @@ DocumentoDiBordo.txt
 ```
 Diario cronologico che documenta scelte metodologiche, esperimenti comparativi, output di ogni fase e note sulle problematiche risolte.
 
+---
+
+## Autori
+
+**Bovolenta Nicole**
+
+**Cantagallo Daniele**
+
+**Oliveri Erika**
+
+**Tortoriello Luca**
 
