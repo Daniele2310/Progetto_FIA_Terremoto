@@ -815,7 +815,7 @@ def menu_geo_embedding_neural() -> int:
 
 
 # ============================================================
-# FASE 4 — SCELTA MODELLO  [parzialmente DA IMPLEMENTARE]
+# FASE 4 — SCELTA MODELLO
 # ============================================================
 
 def menu_scelta_modello() -> str:
